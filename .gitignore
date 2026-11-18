@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# build files
+dist/
+build/
+
+# Cloudflare
+.wrangler/
+
+# database
+*.db
+
+# env files
+.env
+.env.local
+
+# logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

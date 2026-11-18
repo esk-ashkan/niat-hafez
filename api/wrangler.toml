@@ -1,0 +1,6 @@
+name = "niat-hafez-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+[vars]
+WEB_APP_URL = "https://niat-hafez.pages.dev"
