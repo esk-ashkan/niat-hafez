@@ -271,15 +271,21 @@ async function createBlupalInvoice(env: Env, amountRial: number) {
 }
 
 async function grantHafez(env: Env, tgid: number, grant: number) {
-  const profile = await getProfile(env, tgid);
-  if (!profile) throw new Error("no_profile");
-  await sb(env)
+  const { data: profile, error: gErr } = await sb(env)
     .from("profile")
-    .update({
-      remained_hafez: (profile.remained_hafez || 0) + grant,
-      last_visit: new Date().toISOString(),
-    })
+    .select("tgid, remained_hafez")
+    .eq("tgid", tgid)
+    .maybeSingle();
+  if (gErr) throw new Error(JSON.stringify(gErr));
+  if (!profile) throw new Error("no_profile");
+
+  const next = Number(profile.remained_hafez || 0) + Number(grant);
+
+  const { error: uErr } = await sb(env)
+    .from("profile")
+    .update({ remained_hafez: next })
     .eq("tgid", tgid);
+  if (uErr) throw new Error(JSON.stringify(uErr));
 }
 
 export default {
@@ -392,7 +398,6 @@ export default {
         const payload = (await request.json()) as {
           event?: string;
           invoice_id?: number;
-          status?: string;
         };
 
         if (payload.event !== "payment.completed" || !payload.invoice_id) {
@@ -406,9 +411,8 @@ export default {
           .select("*")
           .eq("invoice_id", invoiceId)
           .maybeSingle();
-        if (error) throw error;
+        if (error) throw new Error(JSON.stringify(error));
         if (!pay) return json({ received: true, note: "unknown_invoice" });
-
         if (pay.status === "PAID") {
           return json({ received: true, note: "already_paid" });
         }
@@ -416,7 +420,7 @@ export default {
         const pkg = PACKAGES[pay.package_id];
         if (!pkg) return json({ received: true, note: "unknown_package" });
 
-        await grantHafez(env, Number(pay.tgid), pkg.grant);
+        await grantHafez(env, Number(pay.tgid), Number(pkg.grant));
 
         const { error: upErr } = await sb(env)
           .from("invoice")
@@ -425,7 +429,7 @@ export default {
             paid_at: new Date().toISOString(),
           })
           .eq("invoice_id", invoiceId);
-        if (upErr) throw upErr;
+        if (upErr) throw new Error(JSON.stringify(upErr));
 
         return json({ received: true, granted: pkg.grant });
       }
@@ -479,9 +483,14 @@ export default {
       }
 
       return json({ error: "not_found" }, 404);
-    } catch (e) {
-      console.error(e);
-      return json({ error: "server_error", detail: String(e) }, 500);
+    } catch (e: unknown) {
+      const detail =
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" && e !== null
+            ? JSON.stringify(e)
+            : String(e);
+      return json({ error: "server_error", detail }, 500);
     }
   },
 };
