@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   createPayment,
   ensureProfile,
@@ -19,7 +19,7 @@ type IconName = "moon" | "sun" | "sparkle" | "book" | "cart" | "home" | "wallet"
 
 function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const };
-  const paths: Record<IconName, React.ReactNode> = {
+  const paths: Record<IconName, ReactNode> = {
     moon: <path d="M20.2 15.2A8.6 8.6 0 0 1 8.8 3.8 8.7 8.7 0 1 0 20.2 15.2Z" />,
     sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></>,
     sparkle: <><path d="m12 2 1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7L12 2Z" /><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" /></>,
@@ -47,6 +47,7 @@ export default function App() {
   const [bootLoading, setBootLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [guideOpen, setGuideOpen] = useState(false);
 
   useEffect(() => {
     initTelegramUi();
@@ -161,7 +162,7 @@ export default function App() {
         </a>
         <div className="top-actions">
           <button className="icon-button theme-toggle" type="button" aria-label="تغییر پوسته" onClick={() => setTheme(theme === "light" ? "dark" : "light")}><Icon name={theme === "light" ? "moon" : "sun"} /></button>
-          <button className="icon-button help-button" type="button" aria-label="راهنما" title="راهنما"><Icon name="help" /></button>
+          <button className="icon-button help-button" type="button" aria-label="راهنما" title="راهنما" onClick={() => setGuideOpen(true)}><Icon name="help" /></button>
         </div>
       </header>
 
@@ -171,6 +172,8 @@ export default function App() {
         <p>نیت کن و به دنیای شعر و حکمت حافظ قدم بگذار.</p>
         <div className="hero-stars" aria-hidden="true"><i>✦</i><i>✧</i><i>✦</i><i>·</i><i>✧</i></div>
       </section>
+
+      {guideOpen && <div className="guide-backdrop" role="presentation" onClick={() => setGuideOpen(false)}><section className="guide-dialog" role="dialog" aria-modal="true" aria-labelledby="guide-title" onClick={(e) => e.stopPropagation()}><button className="guide-close" type="button" aria-label="بستن راهنما" onClick={() => setGuideOpen(false)}>×</button><span className="result-seal"><Icon name="book" size={22} /></span><h2 id="guide-title">چطور فال بگیریم؟</h2><p>لحظه‌ای آرام بگیر، نیتت را در دل مرور کن و دکمه «نیت کردم؛ فال بگیر» را بزن. غزل حافظ و تعبیر آن برایت نمایش داده می‌شود.</p><button className="primary-button guide-confirm" type="button" onClick={() => setGuideOpen(false)}>متوجه شدم</button></section></div>}
 
       {error && <div className="notice" role="status"><span className="notice-dot" />{error}<button type="button" aria-label="بستن پیام" onClick={() => setError("")}>×</button></div>}
 
@@ -235,7 +238,7 @@ export default function App() {
       <nav className="bottom-nav" aria-label="ناوبری اصلی">
         <button className={view === "home" ? "active" : ""} type="button" onClick={() => setView("home")}><Icon name="home" size={21} /><span>فال حافظ</span></button>
         <button className={view === "pay" ? "active" : ""} type="button" onClick={() => setView("pay")}><Icon name="cart" size={21} /><span>خرید اعتبار</span></button>
-        <button type="button" onClick={() => setFaal(null)}><Icon name="book" size={21} /><span>راهنما</span></button>
+        <button type="button" onClick={() => setGuideOpen(true)}><Icon name="book" size={21} /><span>راهنما</span></button>
       </nav>
     </main>
   );
