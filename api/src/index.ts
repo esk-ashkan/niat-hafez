@@ -288,6 +288,21 @@ async function grantHafez(env: Env, tgid: number, grant: number) {
   if (uErr) throw new Error(JSON.stringify(uErr));
 }
 
+async function processPaidPayment(env: Env, invoiceId: number) {
+  const { data, error } = await sb(env).rpc("process_paid_payment", {
+    p_invoice_id: invoiceId,
+  });
+
+  if (error) throw new Error(JSON.stringify(error));
+
+  return data as {
+    ok: boolean;
+    reason?: string;
+    already_paid?: boolean;
+    granted?: number;
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === "OPTIONS") {
@@ -407,7 +422,7 @@ export default {
         const invoiceId = Number(payload.invoice_id);
 
         const { data: pay, error } = await sb(env)
-          .from("invoice")
+          .from("payment")
           .select("*")
           .eq("invoice_id", invoiceId)
           .maybeSingle();
@@ -420,18 +435,52 @@ export default {
         const pkg = PACKAGES[pay.package_id];
         if (!pkg) return json({ received: true, note: "unknown_package" });
 
-        await grantHafez(env, Number(pay.tgid), Number(pkg.grant));
+        const verifyRes = await fetch(
+          `https://blupal.top/api/v1/invoices/${invoiceId}`,
+          {
+            headers: {
+              "X-API-Key": env.BLUPAL_API_KEY,
+            },
+          }
+        );
 
-        const { error: upErr } = await sb(env)
-          .from("invoice")
-          .update({
-            status: "PAID",
-            paid_at: new Date().toISOString(),
-          })
-          .eq("invoice_id", invoiceId);
-        if (upErr) throw new Error(JSON.stringify(upErr));
+        let verified: any;
 
-        return json({ received: true, granted: pkg.grant });
+        try {
+          verified = await verifyRes.json();
+        } catch {
+          return json({ error: "invalid_blupal_response" }, 502);
+        }
+
+        if (
+          !verifyRes.ok ||
+          !verified.success ||
+          Number(verified.invoice_id) !== invoiceId ||
+          verified.status !== "PAID" ||
+          Number(verified.amount) !== Number(pay.amount_rial) ||
+          verified.mode !== "sandbox"
+        ) {
+          return json({ error: "payment_not_verified" }, 400);
+        }
+
+        const result = await processPaidPayment(env, invoiceId);
+
+        if (!result.ok) {
+          return json(
+            { error: result.reason || "payment_processing_failed" },
+            400
+          );
+        }
+        if (result.already_paid) {
+          return json({
+            received: true,
+            note: "already_paid",
+          });
+        }
+        return json({
+          received: true,
+          granted: result.granted,
+        });
       }
 
       if (path === "/api/pay/status") {
@@ -453,7 +502,7 @@ export default {
         if (!invoiceId) return json({ error: "invoice_id_required" }, 400);
 
         const { data: pay, error } = await sb(env)
-          .from("invoice") // or "payment" — same name as your table
+          .from("payment")
           .select("*")
           .eq("invoice_id", invoiceId)
           .maybeSingle();
@@ -466,20 +515,36 @@ export default {
           { headers: { "X-API-Key": env.BLUPAL_API_KEY } }
         );
         const remote = await res.json();
-        if (!res.ok || remote.status !== "PAID") {
-          return json({ status: pay.status, remote: remote.status || remote });
-        }
+        if (
+            !res.ok ||
+            !remote.success ||
+            Number(remote.invoice_id) !== invoiceId ||
+            remote.status !== "PAID" ||
+            Number(remote.amount) !== Number(pay.amount_rial)
+          ) {
+            return json({
+              status: pay.status,
+              error: "payment_not_verified",
+            }, 400);
+          }
 
         const pkg = PACKAGES[pay.package_id];
         if (!pkg) return json({ error: "unknown_package" }, 400);
 
-        await grantHafez(env, pay.tgid, pkg.grant);
-        await sb(env)
-          .from("invoice")
-          .update({ status: "PAID", paid_at: new Date().toISOString() })
-          .eq("invoice_id", invoiceId);
+        const result = await processPaidPayment(env, invoiceId);
 
-        return json({ status: "PAID", granted: pkg.grant });
+        if (!result.ok) {
+          return json(
+            { error: result.reason || "payment_processing_failed" },
+            400
+          );
+        }
+
+        return json({
+          status: "PAID",
+          granted: result.granted,
+          already_paid: result.already_paid,
+        });
       }
 
       return json({ error: "not_found" }, 404);
