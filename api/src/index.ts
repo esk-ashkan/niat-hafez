@@ -140,16 +140,42 @@ async function requestInterpretation(
       },
       body: JSON.stringify({
         model,
-        temperature: 0.65,
-        max_tokens: 650,
-        messages: [
+        temperature: 0.55,
+        max_tokens: 700,
+                messages: [
           {
             role: "system",
-            content: "تو مفسر ادبی و آشنا با شعر حافظ هستی. به فارسی روان و محترمانه پاسخ بده. تعبیر اولیه را مبنا قرار بده و آن را با توجه به نیت کاربر روشن‌تر و کاربردی‌تر کن. به متن غزل وفادار بمان، معنای شعر را تحریف نکن و پیشگویی قطعی، وعده تضمینی یا توصیه تخصصی مالی، پزشکی و حقوقی نده. پاسخ را در ۲ تا ۴ بند کوتاه بنویس.",
+            content: [
+              "تو یک مفسر ادبی غزل‌های حافظ هستی، نه پیشگو و نه مشاور تخصصی.",
+              "فقط به زبان فارسی روان، محترمانه و روشن بنویس.",
+              "تعبیر اولیه را مبنا بگیر؛ آن را حذف یا نقض نکن، فقط با توجه به نیت کاربر روشن‌تر و کاربردی‌ترش کن.",
+              "به واژه‌ها، تصاویر و فضای غزل وفادار بمان؛ معنای شعر را عوض نکن و از غزل نتیجهٔ اجباری نساز.",
+              "لحن: آرام، امیدوار اما واقع‌بین؛ بدون اغراق، بدون ترس‌افکنی.",
+              "ممنوع: پیش‌بینی قطعی زمانی («حتماً تا فلان روز»)، وعدهٔ تضمینی پول/ازدواج/شفا، دستورالعمل پزشکی/حقوقی/مالی، طالع‌بینی خرافی سنگین، یا نصیحت تهدیدآمیز.",
+              "ساختار پاسخ دقیقاً سه بخش کوتاه با همین عنوان‌ها:",
+              "۱) پیوند با غزل",
+              "۲) خوانش متناسب با نیت",
+              "۳) نکتهٔ تأملی",
+              "هر بخش حداکثر ۲–۳ جمله.",
+            ].join(" "),
           },
           {
             role: "user",
-            content: `موضوع نیت: ${INTENTIONS[intention] || INTENTIONS.general}\n\nعنوان غزل: ${faal.title}\n\nمتن غزل:\n${faal.poem}\n\nتعبیر اولیه:\n${faal.interpretation}\n\nاکنون تعبیر را با حفظ پیوند با غزل و تعبیر اولیه، متناسب با موضوع نیت کاربر بنویس.`,
+            content: [
+              `نیت کاربر: ${INTENTIONS[intention] || INTENTIONS.general}`,
+              `کد نیت: ${intention}`,
+              "",
+              `عنوان غزل: ${faal.title}`,
+              "",
+              "متن غزل:",
+              faal.poem,
+              "",
+              "تعبیر اولیه (منبع اصلی؛ نباید تحریف شود):",
+              faal.interpretation || "—",
+              "",
+              "وظیفه: تعبیری بنویس که همان روح تعبیر اولیه را حفظ کند، اما تأکید و مثال‌هایش با نیت کاربر هم‌راستا باشد.",
+              "اگر نیت با غزل فاصله دارد، با احتیاط و بدون تحمیل معنا، فقط زاویهٔ نگاه را نرم تنظیم کن.",
+            ].join("\n"),
           },
         ],
       }),
@@ -184,12 +210,11 @@ async function requestInterpretation(
 }
 
 async function enhanceInterpretation(env: Env, faal: Faal, intention: string) {
-  // Groq is the primary provider. Apinex is attempted only if Groq fails.
   if (env.GROQ_API_KEY) {
     const groqResult = await requestInterpretation(
       "groq",
       env.GROQ_API_KEY,
-      env.GROQ_MODEL || "llama-3.1-8b-instant",
+      env.GROQ_MODEL || "openai/gpt-oss-20b",
       "https://api.groq.com/openai/v1/chat/completions",
       faal,
       intention
@@ -282,30 +307,54 @@ async function consumeCredit(env: Env, tgid: number) {
     return { ok: false as const, error: "no_profile" as const, profile: null };
   }
 
-  if (profile.remained_hafez > 0) {
-    await sb(env)
+  const now = new Date().toISOString();
+
+  if (Number(profile.remained_hafez) > 0) {
+    const { data, error } = await sb(env)
       .from("profile")
       .update({
-        remained_hafez: profile.remained_hafez - 1,
-        last_visit: new Date().toISOString(),
+        remained_hafez: Number(profile.remained_hafez) - 1,
+        last_visit: now,
       })
-      .eq("tgid", tgid);
-  } else if (profile.free_remaining > 0) {
-    await sb(env)
-      .from("profile")
-      .update({
-        free_remaining: profile.free_remaining - 1,
-        last_visit: new Date().toISOString(),
-      })
-      .eq("tgid", tgid);
-  } else {
-    return { ok: false as const, error: "no_credit" as const, profile };
+      .eq("tgid", tgid)
+      .gt("remained_hafez", 0)
+      .select("*")
+      .maybeSingle();
+
+    if (error) throw new Error(JSON.stringify(error));
+    if (!data) {
+      const again = await getProfile(env, tgid);
+      return again
+        ? await consumeCredit(env, tgid)
+        : { ok: false as const, error: "no_profile" as const, profile: null };
+    }
+    return { ok: true as const, profile: data as ProfileRow };
   }
 
-  return {
-    ok: true as const,
-    profile: (await getProfile(env, tgid))!,
-  };
+  if (Number(profile.free_remaining) > 0) {
+    const { data, error } = await sb(env)
+      .from("profile")
+      .update({
+        free_remaining: Number(profile.free_remaining) - 1,
+        last_visit: now,
+      })
+      .eq("tgid", tgid)
+      .gt("free_remaining", 0)
+      .select("*")
+      .maybeSingle();
+
+    if (error) throw new Error(JSON.stringify(error));
+    if (!data) {
+      const again = await getProfile(env, tgid);
+      if (!again || Number(again.free_remaining) <= 0 && Number(again.remained_hafez) <= 0) {
+        return { ok: false as const, error: "no_credit" as const, profile: again };
+      }
+      return await consumeCredit(env, tgid);
+    }
+    return { ok: true as const, profile: data as ProfileRow };
+  }
+
+  return { ok: false as const, error: "no_credit" as const, profile };
 }
 
 async function tgApi(env: Env, method: string, body: unknown) {
