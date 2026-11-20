@@ -7,6 +7,8 @@ export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   WEB_APP_URL: string;
   BLUPAL_API_KEY: string;
+  APINEX_API_KEY?: string;
+  APINEX_MODEL?: string;
 }
 
 type Faal = {
@@ -104,7 +106,64 @@ function randomFaal(): Faal {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-async function getProfile(env: Env, tgid: number) {
+
+const INTENTIONS: Record<string, string> = {
+  general: "عمومی",
+  love: "عشقی و عاطفی",
+  career: "کاری و شغلی",
+  financial: "مالی و اقتصادی",
+  education: "تحصیلی",
+  family: "خانوادگی",
+  migration: "مهاجرت و سفر",
+  decision: "تصمیم‌گیری",
+};
+
+async function enhanceInterpretation(env: Env, faal: Faal, intention: string) {
+  if (!env.APINEX_API_KEY) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 18000);
+  try {
+    const response = await fetch("https://api.apinex.bond/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${env.APINEX_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: env.APINEX_MODEL || "free/gemini-3.8-flash",
+        temperature: 0.65,
+        max_tokens: 650,
+        messages: [
+          {
+            role: "system",
+            content: "تو مفسر ادبی و آشنا با شعر حافظ هستی. به فارسی روان و محترمانه پاسخ بده. تعبیر اولیه را مبنا قرار بده و آن را با توجه به نیت کاربر روشن‌تر و کاربردی‌تر کن. به متن غزل وفادار بمان، معنای شعر را تحریف نکن و پیشگویی قطعی، وعده تضمینی یا توصیه تخصصی مالی، پزشکی و حقوقی نده. پاسخ را در ۲ تا ۴ بند کوتاه بنویس.",
+          },
+          {
+            role: "user",
+            content: `موضوع نیت: ${INTENTIONS[intention] || INTENTIONS.general}\n\nعنوان غزل: ${faal.title}\n\nمتن غزل:\n${faal.poem}\n\nتعبیر اولیه:\n${faal.interpretation}\n\nاکنون تعبیر را با حفظ پیوند با غزل و تعبیر اولیه، متناسب با موضوع نیت کاربر بنویس.`,
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as {
+      choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>;
+    };
+    const content = data.choices?.[0]?.message?.content;
+    const text = typeof content === "string"
+      ? content.trim()
+      : Array.isArray(content)
+        ? content.map((part) => part.text || "").join("").trim()
+        : "";
+    return text || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+\nasync function getProfile(env: Env, tgid: number) {
   const { data, error } = await sb(env)
     .from("profile")
     .select("*")
@@ -345,6 +404,11 @@ export default {
         const tgid = Number(url.searchParams.get("tgid") || 0);
         if (!tgid) return json({ error: "tgid_required" }, 400);
 
+        const requestedIntention = url.searchParams.get("intention") || "general";
+        const intention = Object.prototype.hasOwnProperty.call(INTENTIONS, requestedIntention)
+          ? requestedIntention
+          : "general";
+
         await ensureProfile(env, {
           tgid,
           username: url.searchParams.get("username"),
@@ -363,7 +427,15 @@ export default {
           );
         }
 
-        const faal = randomFaal();
+        const originalFaal = randomFaal();
+        const enhanced = await enhanceInterpretation(env, originalFaal, intention);
+        const faal = {
+          ...originalFaal,
+          interpretation: enhanced || originalFaal.interpretation,
+          defaultInterpretation: originalFaal.interpretation,
+          aiEnhanced: Boolean(enhanced),
+          intention,
+        };
         return json({
           faal,
           profile: publicProfile(spent.profile!),
