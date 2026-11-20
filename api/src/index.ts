@@ -7,6 +7,8 @@ export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   WEB_APP_URL: string;
   BLUPAL_API_KEY: string;
+  GROQ_API_KEY?: string;
+  GROQ_MODEL?: string;
   APINEX_API_KEY?: string;
   APINEX_MODEL?: string;
 }
@@ -118,19 +120,26 @@ const INTENTIONS: Record<string, string> = {
   decision: "تصمیم‌گیری",
 };
 
-async function enhanceInterpretation(env: Env, faal: Faal, intention: string) {
-  if (!env.APINEX_API_KEY) return null;
+async function requestInterpretation(
+  provider: "groq" | "apinex",
+  apiKey: string,
+  model: string,
+  endpoint: string,
+  faal: Faal,
+  intention: string
+): Promise<string | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 18000);
+
   try {
-    const response = await fetch("https://api.apinex.bond/v1/chat/completions", {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${env.APINEX_API_KEY}`,
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: env.APINEX_MODEL || "free/gemini-3.8-flash",
+        model,
         temperature: 0.65,
         max_tokens: 650,
         messages: [
@@ -146,7 +155,13 @@ async function enhanceInterpretation(env: Env, faal: Faal, intention: string) {
       }),
       signal: controller.signal,
     });
-    if (!response.ok) return null;
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`${provider.toUpperCase()}_HTTP_ERROR:`, response.status, errorBody.slice(0, 1200));
+      return null;
+    }
+
     const data = await response.json() as {
       choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>;
     };
@@ -157,11 +172,55 @@ async function enhanceInterpretation(env: Env, faal: Faal, intention: string) {
         ? content.map((part) => part.text || "").join("").trim()
         : "";
     return text || null;
-  } catch {
+  } catch (error) {
+    console.error(
+      `${provider.toUpperCase()}_EXCEPTION:`,
+      error instanceof Error ? error.message : String(error)
+    );
     return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function enhanceInterpretation(env: Env, faal: Faal, intention: string) {
+  // Groq is the primary provider. Apinex is attempted only if Groq fails.
+  if (env.GROQ_API_KEY) {
+    const groqResult = await requestInterpretation(
+      "groq",
+      env.GROQ_API_KEY,
+      env.GROQ_MODEL || "llama-3.1-8b-instant",
+      "https://api.groq.com/openai/v1/chat/completions",
+      faal,
+      intention
+    );
+    if (groqResult) {
+      console.log("INTERPRETATION_PROVIDER: groq");
+      return { text: groqResult, provider: "groq" as const };
+    }
+  } else {
+    console.warn("GROQ_API_KEY is not configured; skipping primary provider.");
+  }
+
+  if (env.APINEX_API_KEY) {
+    const apinexResult = await requestInterpretation(
+      "apinex",
+      env.APINEX_API_KEY,
+      env.APINEX_MODEL || "free/gemini-3.8-flash",
+      "https://api.apinex.bond/v1/chat/completions",
+      faal,
+      intention
+    );
+    if (apinexResult) {
+      console.log("INTERPRETATION_PROVIDER: apinex_fallback");
+      return { text: apinexResult, provider: "apinex" as const };
+    }
+  } else {
+    console.warn("APINEX_API_KEY is not configured; fallback unavailable.");
+  }
+
+  console.error("INTERPRETATION_PROVIDER: original_fallback");
+  return null;
 }
 
 
@@ -433,9 +492,10 @@ export default {
         const enhanced = await enhanceInterpretation(env, originalFaal, intention);
         const faal = {
           ...originalFaal,
-          interpretation: enhanced || originalFaal.interpretation,
+          interpretation: enhanced?.text || originalFaal.interpretation,
           defaultInterpretation: originalFaal.interpretation,
           aiEnhanced: Boolean(enhanced),
+          interpretationProvider: enhanced?.provider || "original",
           intention,
         };
         return json({
