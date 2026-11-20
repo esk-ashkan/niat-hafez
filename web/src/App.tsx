@@ -44,6 +44,7 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [packages, setPackages] = useState<Package[]>([]);
   const [faal, setFaal] = useState<Faal | null>(null);
+  const [intention, setIntention] = useState("general");
   const [bootLoading, setBootLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -107,7 +108,7 @@ export default function App() {
     setError("");
     setFaal(null);
     try {
-      const res = await fetchFal(tgid);
+      const res = await fetchFal(tgid, intention);
       setFaal(res.faal);
       setProfile(res.profile);
     } catch (e) {
@@ -191,10 +192,23 @@ export default function App() {
               <span className="crystal-star star-a">✦</span><span className="crystal-star star-b">✧</span><span className="crystal-star star-c">✦</span>
             </div>
             {view === "home" ? (
+              <>
+              <label className="intention-select-label" htmlFor="fortune-intention">نیت شما درباره چیست؟</label>
+              <select id="fortune-intention" className="intention-select" value={intention} onChange={(e) => setIntention(e.target.value)}>
+                <option value="general">عمومی</option>
+                <option value="love">عشقی و عاطفی</option>
+                <option value="career">کاری و شغلی</option>
+                <option value="financial">مالی و اقتصادی</option>
+                <option value="education">تحصیلی</option>
+                <option value="family">خانوادگی</option>
+                <option value="migration">مهاجرت و سفر</option>
+                <option value="decision">تصمیم‌گیری</option>
+              </select>
               <button className="primary-button" type="button" disabled={loading || !tgid} onClick={onGetFal}>
                 {loading ? <span className="button-spinner" /> : <Icon name="sparkle" size={21} />}
                 <span>{loading ? "در حال گشودن دیوان..." : "نیت کردم؛ فال بگیر"}</span><Icon name="arrow" size={19} />
               </button>
+              </>
             ) : (
               <button className="text-button" type="button" onClick={() => setView("home")}>بازگشت به گرفتن فال <Icon name="arrow" size={17} /></button>
             )}
@@ -205,7 +219,7 @@ export default function App() {
             <div className="result-heading"><span className="result-seal"><Icon name="sparkle" size={22} /></span><span>فال شما</span></div>
             <h2>{faal.title}</h2>
             <pre className="poem">{faal.poem}</pre>
-            {faal.interpretation && <div className="interpretation"><h3><Icon name="book" size={18} /> تعبیر فال</h3><p>{faal.interpretation}</p></div>}
+            {faal.interpretation && <div className="interpretation"><h3><Icon name="book" size={18} /> تعبیر فال</h3><p>{faal.interpretation}</p>{faal.defaultInterpretation && faal.defaultInterpretation !== faal.interpretation && <details className="default-interpretation"><summary>مشاهده تعبیر اولیه</summary><p>{faal.defaultInterpretation}</p></details>}</div>}
             <button className="secondary-button" type="button" disabled={loading} onClick={onGetFal}>{loading ? <span className="button-spinner" /> : <Icon name="refresh" size={18} />} فال دیگری بگیر</button>
           </article>
         )}
