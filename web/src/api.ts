@@ -21,6 +21,9 @@ export type Faal = {
   title: string;
   poem: string;
   interpretation: string;
+  defaultInterpretation?: string;
+  aiEnhanced?: boolean;
+  intention?: string;
 };
 
 export type Profile = {
@@ -56,8 +59,9 @@ export async function ensureProfile(params: {
   return data.profile;
 }
 
-export async function fetchFal(tgid: number) {
-  const res = await withTimeout(fetch(`${API}/api/fal?tgid=${tgid}`), 20000);
+export async function fetchFal(tgid: number, intention = "general") {
+  const params = new URLSearchParams({ tgid: String(tgid), intention });
+  const res = await withTimeout(fetch(`${API}/api/fal?${params.toString()}`), 35000);
   const data = await res.json();
   if (res.status === 402 || data.error === "no_credit") {
     const err = new Error("no_credit") as Error & { profile?: Profile };
