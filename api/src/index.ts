@@ -163,7 +163,9 @@ async function enhanceInterpretation(env: Env, faal: Faal, intention: string) {
     clearTimeout(timeout);
   }
 }
-\nasync function getProfile(env: Env, tgid: number) {
+
+
+async function getProfile(env: Env, tgid: number) {
   const { data, error } = await sb(env)
     .from("profile")
     .select("*")
