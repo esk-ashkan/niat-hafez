@@ -335,7 +335,6 @@ async function consumeCredit(env: Env, tgid: number) {
     const { data, error } = await sb(env)
       .from("profile")
       .update({
-        free_remaining: Number(profile.free_remaining) - 1,
         last_visit: now,
       })
       .eq("tgid", tgid)
