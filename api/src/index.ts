@@ -66,7 +66,7 @@ const list: Faal[] =
 const cors: HeadersInit = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, X-Telegram-Init-Data",
 };
 
 function json(data: unknown, status = 200): Response {
@@ -597,7 +597,8 @@ export default {
         const inv = await createBlupalInvoice(env, pkg.amount_rial);
         if (!Number.isSafeInteger(Number(inv.invoice_id)) || Number(inv.invoice_id) <= 0 ||
             typeof inv.payment_link !== "string" || !/^https:\/\//i.test(inv.payment_link) ||
-            Number(inv.amount) !== pkg.amount_rial) {
+            Number(inv.amount) !== pkg.amount_rial ||
+            !env.BLUPAL_MODE || inv.mode !== env.BLUPAL_MODE) {
           throw new Error("invalid_blupal_invoice_response");
         }
 
