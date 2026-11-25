@@ -72,13 +72,10 @@ export default function App() {
           }
           return;
         }
-        localStorage.setItem("tgid", String(u.id));
-        if (u.username) localStorage.setItem("tg_username", u.username);
-        if (u.first_name) localStorage.setItem("tg_first_name", u.first_name);
         setTgid(u.id);
         if (!cancelled) setBootLoading(false);
         try {
-          const p = await ensureProfile({ tgid: u.id, username: u.username, first_name: u.first_name });
+          const p = await ensureProfile();
           if (!cancelled) { setProfile(p); setError(""); }
         } catch {
           if (!cancelled) setError("خطا در اتصال به سرور. در صورت نیاز VPN را روشن کنید.");
@@ -108,7 +105,7 @@ export default function App() {
     setError("");
     setFaal(null);
     try {
-      const res = await fetchFal(tgid, intention);
+      const res = await fetchFal(intention);
       setFaal(res.faal);
       setProfile(res.profile);
     } catch (e) {
@@ -128,23 +125,31 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
-      const { payment_link, invoice_id } = await createPayment(tgid, p.id);
+      const { payment_link, invoice_id } = await createPayment(p.id);
       const wa = (window as any).Telegram?.WebApp;
       if (wa?.openLink) wa.openLink(payment_link);
       else window.open(payment_link, "_blank");
-      for (let i = 0; i < 12; i++) {
+      let paid = false;
+      for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 3000));
         const st = await getPaymentStatus(invoice_id);
         if (st.status === "PAID") {
-          const prof = await ensureProfile({ tgid });
+          const prof = await ensureProfile();
           setProfile(prof);
           setError("");
           setView("home");
+          paid = true;
           break;
         }
       }
-    } catch {
-      setError("ایجاد فاکتور پرداخت با مشکل روبه‌رو شد. لطفاً دوباره تلاش کنید.");
+      if (!paid) {
+        setError("وضعیت پرداخت هنوز نهایی نشده است. پس از تأیید پرداخت، اعتبار شما به‌روزرسانی می‌شود؛ می‌توانید کمی بعد دوباره بررسی کنید.");
+      }
+    } catch (e) {
+      const message = e instanceof Error && e.message === "telegram_auth_failed"
+        ? "اعتبار ورود تلگرام تأیید نشد. برنامه را از داخل ربات دوباره باز کنید."
+        : "در بررسی وضعیت پرداخت مشکلی پیش آمد. فاکتور شما حذف نشده است؛ کمی بعد دوباره بررسی کنید.";
+      setError(message);
     } finally { setLoading(false); }
   }
 
