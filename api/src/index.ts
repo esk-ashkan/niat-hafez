@@ -292,7 +292,9 @@ async function requestInterpretation(
       : Array.isArray(content)
         ? content.map((part) => part.text || "").join("").trim()
         : "";
-    const validated = validateInterpretation(text);\n    if (!validated && text) console.warn(`${provider.toUpperCase()}_INVALID_INTERPRETATION_FORMAT`);\n    return validated;
+    const validated = validateInterpretation(text);
+    if (!validated && text) console.warn(`${provider.toUpperCase()}_INVALID_INTERPRETATION_FORMAT`);
+    return validated;
   } catch (error) {
     console.error(
       `${provider.toUpperCase()}_EXCEPTION:`,
@@ -565,7 +567,8 @@ export default {
         return json({ ok: true, service: "niat-hafez-api" });
       }
 
-      if (path === "/api/profile") {\n        if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+      if (path === "/api/profile") {
+        if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
         const user = await authenticateTelegram(request, env);
         if (!user) return json({ error: "unauthorized" }, 401);
         if (await isRateLimited(env, `profile:${user.id}`, 60, 60)) {
@@ -575,7 +578,8 @@ export default {
         return json({ profile: publicProfile(profile) });
       }
 
-      if (path === "/api/fal") {\n        if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+      if (path === "/api/fal") {
+        if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
         const user = await authenticateTelegram(request, env);
         if (!user) return json({ error: "unauthorized" }, 401);
         const tgid = user.id;
@@ -590,6 +594,20 @@ export default {
 
         await ensureProfile(env, { tgid: user.id, username: user.username, first_name: user.first_name, last_name: user.last_name });
 
+        // Check current balance before expensive AI work, but deduct only after
+        // interpretation generation succeeds. The atomic RPC remains the final
+        // authority when concurrent requests compete for the last credit.
+        const currentProfile = await getProfile(env, tgid);
+        if (!currentProfile) return json({ error: "no_profile" }, 404);
+        if ((currentProfile.free_remaining || 0) + (currentProfile.remained_hafez || 0) <= 0) {
+          return json({ error: "no_credit", profile: publicProfile(currentProfile) }, 402);
+        }
+
+        const originalFaal = randomFaal();
+        const enhanced = await enhanceInterpretation(env, originalFaal, intention);
+
+        // Consume only after generation completes; this prevents unexpected
+        // generation failures from charging the user without returning a result.
         const spent = await consumeCredit(env, tgid);
         if (!spent.ok) {
           return json(
@@ -600,9 +618,6 @@ export default {
             402
           );
         }
-
-        const originalFaal = randomFaal();
-        const enhanced = await enhanceInterpretation(env, originalFaal, intention);
         const faal = {
           ...originalFaal,
           interpretation: enhanced?.text || originalFaal.interpretation,
