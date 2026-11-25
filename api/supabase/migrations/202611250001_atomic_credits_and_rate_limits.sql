@@ -2,11 +2,14 @@
 -- Apply this migration in the Supabase SQL editor before deploying the Worker.
 
 create or replace function public.consume_hafez_credit(p_tgid bigint)
-returns setof public.profile
-language sql
+returns public.profile
+language plpgsql
 security invoker
 set search_path = public
 as $$
+declare
+  v_profile public.profile;
+begin
   update public.profile
   set
     remained_hafez = case
@@ -20,7 +23,10 @@ as $$
     last_visit = now()
   where tgid = p_tgid
     and (coalesce(remained_hafez, 0) > 0 or coalesce(free_remaining, 0) > 0)
-  returning *;
+  returning * into v_profile;
+
+  return v_profile;
+end;
 $$;
 
 create table if not exists public.api_rate_limits (
