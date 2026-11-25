@@ -53,7 +53,7 @@ revoke all on function public.consume_hafez_credit(bigint) from public, anon, au
 revoke all on function public.consume_api_rate_limit(text, integer, integer) from public, anon, authenticated;
 grant execute on function public.consume_hafez_credit(bigint) to service_role;
 grant execute on function public.consume_api_rate_limit(text, integer, integer) to service_role;
-revoke all on public.api_rate_limits from anon, authenticated;
+revoke all on public.api_rate_limits from public, anon, authenticated;
 grant select, insert, update, delete on public.api_rate_limits to service_role;
 
 -- Restrict payment credit-granting RPC to the backend service role.
