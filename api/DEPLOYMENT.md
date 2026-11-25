@@ -30,16 +30,47 @@ Configure these Cloudflare Worker variables/secrets:
 
 Set `BLUPAL_MODE` to match the actual BluPal account/API environment. The API intentionally rejects invoices when the variable is missing or the provider's returned mode does not match.
 
-## Important payment database prerequisite
+## Payment database function review
 
-The repository calls the Supabase RPC `process_paid_payment(p_invoice_id)` to mark an invoice paid and grant credits. Its SQL definition and the table DDL are not present in this repository. Before enabling live payments, inspect that function and verify that it:
+The existing `public.process_paid_payment(p_invoice_id bigint)` function has been reviewed. It uses `SELECT ... FOR UPDATE` on the payment row, checks for an already-PAID invoice, adds credits, and marks the invoice PAID in the same transaction. This is a sound idempotent pattern for concurrent webhook and reconciliation calls **provided that `payment.invoice_id` is unique**.
 
-1. Locks or conditionally updates the payment row so concurrent webhook/reconcile calls cannot grant twice.
-2. Grants the package credits and marks the payment PAID in the same database transaction.
-3. Rejects unknown invoices, invalid package IDs, and already-processed payments safely.
-4. Uses a unique constraint on `payment.invoice_id`.
+Before enabling live payments, verify the database constraints and data:
 
-Do not enable production payments until this function has been reviewed and tested against the actual schema.
+```sql
+-- These queries should return no duplicate groups.
+select invoice_id, count(*)
+from public.payment
+group by invoice_id
+having count(*) > 1;
+
+select tgid, count(*)
+from public.profile
+group by tgid
+having count(*) > 1;
+
+-- Inspect existing primary keys and unique constraints.
+select
+  tc.table_name,
+  tc.constraint_name,
+  tc.constraint_type,
+  kcu.column_name
+from information_schema.table_constraints tc
+join information_schema.key_column_usage kcu
+  on tc.constraint_schema = kcu.constraint_schema
+ and tc.constraint_name = kcu.constraint_name
+where tc.table_schema = 'public'
+  and tc.table_name in ('payment', 'profile')
+  and tc.constraint_type in ('PRIMARY KEY', 'UNIQUE')
+order by tc.table_name, tc.constraint_name;
+```
+
+Ensure `payment.invoice_id` and `profile.tgid` each have a UNIQUE or PRIMARY KEY constraint. Do not add constraints until duplicate rows, if any, have been resolved. The profile constraint matters because the payment function must update exactly one account.
+
+The function's package-to-credit mapping must remain aligned with the Worker `PACKAGES` configuration. Consider moving this mapping into a database package table in a later cleanup to avoid maintaining it twice.
+
+The function is called by the Worker only after the provider invoice has been fetched and checked for invoice ID, PAID status, amount, and configured mode. Keep the function inaccessible to `anon` and `authenticated`; only the server-side `service_role` should be able to execute it.
+
+Do not enable production payments until the constraints are verified and a sandbox payment has been tested end-to-end.
 
 ## Telegram client requirement
 
