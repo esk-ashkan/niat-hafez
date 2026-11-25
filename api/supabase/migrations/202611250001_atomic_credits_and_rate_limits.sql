@@ -1,35 +1,7 @@
--- Atomic credit consumption and per-user API rate limiting.
--- Apply this migration in the Supabase SQL editor before deploying the Worker.
-
-drop function if exists public.consume_hafez_credit(bigint);
-
-create or replace function public.consume_hafez_credit(p_tgid bigint)
-returns public.profile
-language plpgsql
-security invoker
-set search_path = public
-as $$
-declare
-  v_profile public.profile;
-begin
-  update public.profile
-  set
-    remained_hafez = case
-      when coalesce(remained_hafez, 0) > 0 then remained_hafez - 1
-      else coalesce(remained_hafez, 0)
-    end,
-    free_remaining = case
-      when coalesce(remained_hafez, 0) > 0 then coalesce(free_remaining, 0)
-      else free_remaining - 1
-    end,
-    last_visit = now()
-  where tgid = p_tgid
-    and (coalesce(remained_hafez, 0) > 0 or coalesce(free_remaining, 0) > 0)
-  returning * into v_profile;
-
-  return v_profile;
-end;
-$$;
+-- Add database-backed per-user API rate limiting.
+-- The existing consume_hafez_credit(bigint) function is intentionally preserved:
+-- it returns JSON { ok, reason, profile } and already locks the profile row.
+-- Do not drop or replace it from this migration.
 
 create table if not exists public.api_rate_limits (
   rate_key text primary key,
