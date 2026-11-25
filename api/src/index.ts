@@ -4,7 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 export interface Env {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_KEY: string;
-  TELEGRAM_BOT_TOKEN: string;\n  TELEGRAM_WEBHOOK_SECRET: string;
+  TELEGRAM_BOT_TOKEN: string;
+  TELEGRAM_WEBHOOK_SECRET: string;
   WEB_APP_URL: string;
   BLUPAL_API_KEY: string;
   GROQ_API_KEY?: string;
