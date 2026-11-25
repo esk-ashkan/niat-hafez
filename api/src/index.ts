@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 export interface Env {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_KEY: string;
-  TELEGRAM_BOT_TOKEN: string;
+  TELEGRAM_BOT_TOKEN: string;\n  TELEGRAM_WEBHOOK_SECRET: string;
   WEB_APP_URL: string;
   BLUPAL_API_KEY: string;
   GROQ_API_KEY?: string;
@@ -447,7 +447,11 @@ async function tgApi(env: Env, method: string, body: unknown) {
       body: JSON.stringify(body),
     }
   );
-  return res.json();
+  const data = await res.json() as { ok?: boolean; description?: string };
+  if (!res.ok || data.ok === false) {
+    throw new Error("telegram_api_request_failed: " + (data.description || res.status));
+  }
+  return data;
 }
 
 async function handleTelegramUpdate(env: Env, update: any) {
@@ -563,6 +567,36 @@ export default {
     const path = url.pathname;
 
     try {
+      if (path === "/api/telegram/webhook") {
+        if (request.method !== "POST") {
+          return json({ error: "method_not_allowed" }, 405);
+        }
+        if (!env.TELEGRAM_WEBHOOK_SECRET) {
+          console.error("TELEGRAM_WEBHOOK_SECRET is not configured");
+          return json({ error: "webhook_not_configured" }, 503);
+        }
+        const suppliedSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
+        if (!constantTimeEqual(suppliedSecret, env.TELEGRAM_WEBHOOK_SECRET)) {
+          return json({ error: "unauthorized" }, 401);
+        }
+
+        const contentLength = Number(request.headers.get("Content-Length") || 0);
+        if (contentLength > 1_000_000) return json({ error: "payload_too_large" }, 413);
+
+        let update: unknown;
+        try {
+          update = await request.json();
+        } catch {
+          return json({ error: "invalid_json" }, 400);
+        }
+        if (!update || typeof update !== "object" || Array.isArray(update)) {
+          return json({ error: "invalid_update" }, 400);
+        }
+
+        await handleTelegramUpdate(env, update);
+        return json({ ok: true });
+      }
+
       if (path === "/" || path === "/health") {
         return json({ ok: true, service: "niat-hafez-api" });
       }
