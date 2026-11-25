@@ -530,6 +530,9 @@ export default {
       if (path === "/api/profile") {
         const user = await authenticateTelegram(request, env);
         if (!user) return json({ error: "unauthorized" }, 401);
+        if (await isRateLimited(env, `profile:${user.id}`, 60, 60)) {
+          return json({ error: "rate_limited" }, 429);
+        }
         const profile = await ensureProfile(env, { tgid: user.id, username: user.username, first_name: user.first_name, last_name: user.last_name });
         return json({ profile: publicProfile(profile) });
       }
@@ -621,6 +624,10 @@ export default {
       }
 
       if (path === "/api/pay/webhook" && request.method === "POST") {
+        const sourceIp = request.headers.get("CF-Connecting-IP") || "unknown";
+        if (await isRateLimited(env, `webhook:${sourceIp}`, 60, 60)) {
+          return json({ error: "rate_limited" }, 429);
+        }
         const payload = (await request.json()) as {
           event?: string;
           invoice_id?: number;
