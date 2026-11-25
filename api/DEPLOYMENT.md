@@ -8,10 +8,12 @@ to the Supabase project used by this app.
 
 It creates:
 
-- `consume_hafez_credit(tgid)`: one atomic database update. Purchased credits are consumed first; otherwise one free credit is consumed.
-- `consume_api_rate_limit(key, limit, window_seconds)`: atomic per-user rate-limit counter.
+- `api_rate_limits`: persistent counters for fixed-window API rate limits.
+- `consume_api_rate_limit(key, limit, window_seconds)`: an atomic per-key rate-limit counter.
 
-The Worker calls these RPC functions. Deploying the Worker without applying the migration will make fortune requests and rate-limited endpoints fail.
+It does **not** create, drop, or replace `consume_hafez_credit(tgid)`. That function already exists in this Supabase project, returns JSON containing `ok`, `reason`, and `profile`, and consumes purchased credits before free credits under a row lock. The Worker parses that existing JSON contract. The migration only restricts the existing credit RPC's execution privileges to the backend service role.
+
+The Worker calls both RPC functions. Deploying the Worker without applying the migration will make rate-limited endpoints fail. Do not drop or recreate the existing credit function.
 
 ## Worker configuration
 
