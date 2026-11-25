@@ -11,6 +11,7 @@ export interface Env {
   GROQ_MODEL?: string;
   APINEX_API_KEY?: string;
   APINEX_MODEL?: string;
+  BLUPAL_MODE?: "sandbox" | "live";
 }
 
 type Faal = {
@@ -80,6 +81,74 @@ function json(data: unknown, status = 200): Response {
 
 function sb(env: Env) {
   return createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+}
+
+type TelegramUser = {
+  id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+};
+
+function toHex(bytes: ArrayBuffer): string {
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
+async function authenticateTelegram(request: Request, env: Env): Promise<TelegramUser | null> {
+  const raw = request.headers.get("X-Telegram-Init-Data");
+  if (!raw || raw.length > 8192) return null;
+
+  const params = new URLSearchParams(raw);
+  const hashes = params.getAll("hash");
+  const dates = params.getAll("auth_date");
+  const users = params.getAll("user");
+  if (hashes.length !== 1 || dates.length !== 1 || users.length !== 1) return null;
+
+  const receivedHash = hashes[0];
+  const authDate = Number(dates[0]);
+  const now = Math.floor(Date.now() / 1000);
+  if (!/^[a-f0-9]{64}$/i.test(receivedHash) || !Number.isInteger(authDate) ||
+      authDate > now + 30 || now - authDate > 86400) return null;
+
+  const checkString = Array.from(params.entries())
+    .filter(([key]) => key !== "hash")
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => key + "=" + value)
+    .join("\n");
+
+  const encoder = new TextEncoder();
+  const secretKey = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode("WebAppData"),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const secret = await crypto.subtle.sign("HMAC", secretKey, encoder.encode(env.TELEGRAM_BOT_TOKEN));
+  const signingKey = await crypto.subtle.importKey(
+    "raw",
+    secret,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const expectedHash = toHex(await crypto.subtle.sign("HMAC", signingKey, encoder.encode(checkString)));
+  if (!constantTimeEqual(expectedHash, receivedHash.toLowerCase())) return null;
+
+  try {
+    const user = JSON.parse(users[0]) as TelegramUser;
+    if (!Number.isSafeInteger(user.id) || user.id <= 0) return null;
+    return user;
+  } catch {
+    return null;
+  }
 }
 
 function publicProfile(p: ProfileRow) {
@@ -302,58 +371,21 @@ async function ensureProfile(
 }
 
 async function consumeCredit(env: Env, tgid: number) {
-  const profile = await getProfile(env, tgid);
+  const { data, error } = await sb(env).rpc("consume_hafez_credit", {
+    p_tgid: tgid,
+  });
+  if (error) throw new Error("credit_consumption_failed: " + error.message);
+
+  const profile = data as ProfileRow | null;
   if (!profile) {
-    return { ok: false as const, error: "no_profile" as const, profile: null };
+    const existing = await getProfile(env, tgid);
+    return {
+      ok: false as const,
+      error: existing ? "no_credit" as const : "no_profile" as const,
+      profile: existing,
+    };
   }
-
-  const now = new Date().toISOString();
-
-  if (Number(profile.remained_hafez) > 0) {
-    const { data, error } = await sb(env)
-      .from("profile")
-      .update({
-        remained_hafez: Number(profile.remained_hafez) - 1,
-        last_visit: now,
-      })
-      .eq("tgid", tgid)
-      .gt("remained_hafez", 0)
-      .select("*")
-      .maybeSingle();
-
-    if (error) throw new Error(JSON.stringify(error));
-    if (!data) {
-      const again = await getProfile(env, tgid);
-      return again
-        ? await consumeCredit(env, tgid)
-        : { ok: false as const, error: "no_profile" as const, profile: null };
-    }
-    return { ok: true as const, profile: data as ProfileRow };
-  }
-
-  if (Number(profile.free_remaining) > 0) {
-    const { data, error } = await sb(env)
-      .from("profile")
-      .update({
-        last_visit: now,
-      })
-      .eq("tgid", tgid)
-      .gt("free_remaining", 0)
-      .select("*")
-      .maybeSingle();
-
-    if (error) throw new Error(JSON.stringify(error));
-    if (!data) {
-      const again = await getProfile(env, tgid);
-      if (!again || Number(again.free_remaining) <= 0 && Number(again.remained_hafez) <= 0) {
-        return { ok: false as const, error: "no_credit" as const, profile: again };
-      }
-      return await consumeCredit(env, tgid);
-    }
-    return { ok: true as const, profile: data as ProfileRow };
-  }
-
-  return { ok: false as const, error: "no_credit" as const, profile };
+  return { ok: true as const, profile };
 }
 
 async function tgApi(env: Env, method: string, body: unknown) {
@@ -482,48 +514,27 @@ export default {
 
     try {
       if (path === "/" || path === "/health") {
-        const tgid = Number(url.searchParams.get("tgid") || 0);
-        if (!tgid) {
-          return json({ ok: true, service: "niat-hafez-api" });
-        }
-
-        const profile = await ensureProfile(env, {
-          tgid,
-          username: url.searchParams.get("username"),
-          first_name:
-            url.searchParams.get("fname") ||
-            url.searchParams.get("first_name"),
-          last_name:
-            url.searchParams.get("lname") ||
-            url.searchParams.get("last_name"),
-        });
-
-        return json({ ok: true, profile: publicProfile(profile) });
+        return json({ ok: true, service: "niat-hafez-api" });
       }
 
       if (path === "/api/profile") {
-        const tgid = Number(url.searchParams.get("tgid") || 0);
-        if (!tgid) return json({ error: "tgid_required" }, 400);
-        const profile = await getProfile(env, tgid);
-        if (!profile) return json({ error: "not_found" }, 404);
+        const user = await authenticateTelegram(request, env);
+        if (!user) return json({ error: "unauthorized" }, 401);
+        const profile = await ensureProfile(env, user);
         return json({ profile: publicProfile(profile) });
       }
 
       if (path === "/api/fal") {
-        const tgid = Number(url.searchParams.get("tgid") || 0);
-        if (!tgid) return json({ error: "tgid_required" }, 400);
+        const user = await authenticateTelegram(request, env);
+        if (!user) return json({ error: "unauthorized" }, 401);
+        const tgid = user.id;
 
         const requestedIntention = url.searchParams.get("intention") || "general";
         const intention = Object.prototype.hasOwnProperty.call(INTENTIONS, requestedIntention)
           ? requestedIntention
           : "general";
 
-        await ensureProfile(env, {
-          tgid,
-          username: url.searchParams.get("username"),
-          first_name: url.searchParams.get("fname"),
-          last_name: url.searchParams.get("lname"),
-        });
+        await ensureProfile(env, user);
 
         const spent = await consumeCredit(env, tgid);
         if (!spent.ok) {
@@ -557,21 +568,22 @@ export default {
       }
 
       if (path === "/api/pay/create" && request.method === "POST") {
-        const body = (await request.json()) as {
-          tgid?: number;
-          package_id?: string;
-        };
-        const tgid = Number(body.tgid || 0);
+        const user = await authenticateTelegram(request, env);
+        if (!user) return json({ error: "unauthorized" }, 401);
+        const body = (await request.json()) as { package_id?: string };
         const package_id = String(body.package_id || "");
         const pkg = PACKAGES[package_id];
+        if (!pkg) return json({ error: "invalid_request" }, 400);
+        const tgid = user.id;
 
-        if (!tgid || !pkg) {
-          return json({ error: "invalid_request" }, 400);
-        }
-
-        await ensureProfile(env, { tgid });
+        await ensureProfile(env, user);
 
         const inv = await createBlupalInvoice(env, pkg.amount_rial);
+        if (!Number.isSafeInteger(Number(inv.invoice_id)) || Number(inv.invoice_id) <= 0 ||
+            typeof inv.payment_link !== "string" || !/^https:\/\//i.test(inv.payment_link) ||
+            Number(inv.amount) !== pkg.amount_rial) {
+          throw new Error("invalid_blupal_invoice_response");
+        }
 
         const { error } = await sb(env).from("payment").insert({
           invoice_id: inv.invoice_id,
@@ -640,7 +652,8 @@ export default {
           Number(verified.invoice_id) !== invoiceId ||
           verified.status !== "PAID" ||
           Number(verified.amount) !== Number(pay.amount_rial) ||
-          verified.mode !== "sandbox"
+          !env.BLUPAL_MODE ||
+          verified.mode !== env.BLUPAL_MODE
         ) {
           return json({ error: "payment_not_verified" }, 400);
         }
@@ -666,27 +679,33 @@ export default {
       }
 
       if (path === "/api/pay/status") {
+        const user = await authenticateTelegram(request, env);
+        if (!user) return json({ error: "unauthorized" }, 401);
         const invoiceId = Number(url.searchParams.get("invoice_id") || 0);
-        if (!invoiceId) return json({ error: "invoice_id_required" }, 400);
+        if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) return json({ error: "invoice_id_required" }, 400);
         const { data: pay, error } = await sb(env)
           .from("payment")
-          .select("invoice_id, status, package_id, tgid")
+          .select("invoice_id, status, tgid")
           .eq("invoice_id", invoiceId)
+          .eq("tgid", user.id)
           .maybeSingle();
         if (error) throw error;
         if (!pay) return json({ error: "not_found" }, 404);
-        return json(pay);
+        return json({ invoice_id: pay.invoice_id, status: pay.status });
       }
 
       if (path === "/api/pay/reconcile" && request.method === "POST") {
+        const user = await authenticateTelegram(request, env);
+        if (!user) return json({ error: "unauthorized" }, 401);
         const body = (await request.json()) as { invoice_id?: number };
         const invoiceId = Number(body.invoice_id || 0);
-        if (!invoiceId) return json({ error: "invoice_id_required" }, 400);
+        if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) return json({ error: "invoice_id_required" }, 400);
 
         const { data: pay, error } = await sb(env)
           .from("payment")
           .select("*")
           .eq("invoice_id", invoiceId)
+          .eq("tgid", user.id)
           .maybeSingle();
         if (error) throw error;
         if (!pay) return json({ error: "not_found" }, 404);
@@ -702,7 +721,9 @@ export default {
             !remote.success ||
             Number(remote.invoice_id) !== invoiceId ||
             remote.status !== "PAID" ||
-            Number(remote.amount) !== Number(pay.amount_rial)
+            Number(remote.amount) !== Number(pay.amount_rial) ||
+            !env.BLUPAL_MODE ||
+            remote.mode !== env.BLUPAL_MODE
           ) {
             return json({
               status: pay.status,
@@ -731,13 +752,8 @@ export default {
 
       return json({ error: "not_found" }, 404);
     } catch (e: unknown) {
-      const detail =
-        e instanceof Error
-          ? e.message
-          : typeof e === "object" && e !== null
-            ? JSON.stringify(e)
-            : String(e);
-      return json({ error: "server_error", detail }, 500);
+      console.error("API_REQUEST_FAILED", e instanceof Error ? e.message : String(e));
+      return json({ error: "server_error" }, 500);
     }
   },
 };
