@@ -530,7 +530,7 @@ export default {
       if (path === "/api/profile") {
         const user = await authenticateTelegram(request, env);
         if (!user) return json({ error: "unauthorized" }, 401);
-        const profile = await ensureProfile(env, user);
+        const profile = await ensureProfile(env, { tgid: user.id, username: user.username, first_name: user.first_name, last_name: user.last_name });
         return json({ profile: publicProfile(profile) });
       }
 
@@ -547,7 +547,7 @@ export default {
           ? requestedIntention
           : "general";
 
-        await ensureProfile(env, user);
+        await ensureProfile(env, { tgid: user.id, username: user.username, first_name: user.first_name, last_name: user.last_name });
 
         const spent = await consumeCredit(env, tgid);
         if (!spent.ok) {
@@ -592,7 +592,7 @@ export default {
           return json({ error: "rate_limited" }, 429);
         }
 
-        await ensureProfile(env, user);
+        await ensureProfile(env, { tgid: user.id, username: user.username, first_name: user.first_name, last_name: user.last_name });
 
         const inv = await createBlupalInvoice(env, pkg.amount_rial);
         if (!Number.isSafeInteger(Number(inv.invoice_id)) || Number(inv.invoice_id) <= 0 ||
