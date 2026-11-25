@@ -66,6 +66,20 @@ order by tc.table_name, tc.constraint_name;
 
 Ensure `payment.invoice_id` and `profile.tgid` each have a UNIQUE or PRIMARY KEY constraint. Do not add constraints until duplicate rows, if any, have been resolved. The profile constraint matters because the payment function must update exactly one account.
 
+The current Supabase privilege inspection showed `EXECUTE` granted to `PUBLIC`, `anon`, `authenticated`, `postgres`, and `service_role`. Restrict it with this SQL in the Supabase SQL Editor:
+
+```sql
+REVOKE ALL ON FUNCTION public.process_paid_payment(bigint)
+FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.process_paid_payment(bigint)
+TO service_role;
+```
+
+Keep the `postgres` owner/admin access. Verify the result by rerunning the `information_schema.routine_privileges` query: `service_role` and the database owner/admin may retain access, but `PUBLIC`, `anon`, and `authenticated` should no longer appear.
+
+This is a database privilege change, not an application-code change. Apply it directly to the Supabase project; keep the SQL documented here so the production setup is reproducible.
+
 The function's package-to-credit mapping must remain aligned with the Worker `PACKAGES` configuration. Consider moving this mapping into a database package table in a later cleanup to avoid maintaining it twice.
 
 The function is called by the Worker only after the provider invoice has been fetched and checked for invoice ID, PAID status, amount, and configured mode. Keep the function inaccessible to `anon` and `authenticated`; only the server-side `service_role` should be able to execute it.
