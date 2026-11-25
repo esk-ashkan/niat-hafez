@@ -3,7 +3,7 @@
 ## Required database migration
 
 Before deploying the Worker, apply
-`supabase/migrations/202611250001_atomic_credits_and_rate_limits.sql`
+`api/supabase/migrations/202611250001_atomic_credits_and_rate_limits.sql`
 to the Supabase project used by this app.
 
 It creates:
