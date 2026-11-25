@@ -189,6 +189,32 @@ const INTENTIONS: Record<string, string> = {
   decision: "تصمیم‌گیری",
 };
 
+function validateInterpretation(raw: string): string | null {
+  const text = raw.trim();
+  if (!text || text.length > 5000) return null;
+
+  const lines = text.split(/\\r?\\n/).map((line) =>
+    line.trim().replace(/^#+\\s*/, "").replace(/^\\*+|\\*+$/g, "").trim()
+  );
+  const headings = [
+    /^(?:[۱1][).．-]\\s*)?پیوند با غزل[:：]?$/,
+    /^(?:[۲2][).．-]\\s*)?خوانش متناسب با نیت[:：]?$/,
+    /^(?:[۳3][).．-]\\s*)?نکتهٔ تأملی[:：]?$/,
+  ];
+
+  const positions = headings.map((pattern) => lines.findIndex((line) => pattern.test(line)));
+  if (positions.some((position) => position < 0)) return null;
+  if (!(positions[0] < positions[1] && positions[1] < positions[2])) return null;
+
+  for (let i = 0; i < positions.length; i++) {
+    const end = i + 1 < positions.length ? positions[i + 1] : lines.length;
+    const section = lines.slice(positions[i] + 1, end).join(" ").trim();
+    if (section.length < 20) return null;
+  }
+
+  return text;
+}
+
 async function requestInterpretation(
   provider: "groq" | "apinex",
   apiKey: string,
@@ -266,7 +292,7 @@ async function requestInterpretation(
       : Array.isArray(content)
         ? content.map((part) => part.text || "").join("").trim()
         : "";
-    return text || null;
+    const validated = validateInterpretation(text);\n    if (!validated && text) console.warn(`${provider.toUpperCase()}_INVALID_INTERPRETATION_FORMAT`);\n    return validated;
   } catch (error) {
     console.error(
       `${provider.toUpperCase()}_EXCEPTION:`,
@@ -539,7 +565,7 @@ export default {
         return json({ ok: true, service: "niat-hafez-api" });
       }
 
-      if (path === "/api/profile") {
+      if (path === "/api/profile") {\n        if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
         const user = await authenticateTelegram(request, env);
         if (!user) return json({ error: "unauthorized" }, 401);
         if (await isRateLimited(env, `profile:${user.id}`, 60, 60)) {
@@ -549,7 +575,7 @@ export default {
         return json({ profile: publicProfile(profile) });
       }
 
-      if (path === "/api/fal") {
+      if (path === "/api/fal") {\n        if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
         const user = await authenticateTelegram(request, env);
         if (!user) return json({ error: "unauthorized" }, 401);
         const tgid = user.id;
