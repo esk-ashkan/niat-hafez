@@ -193,13 +193,13 @@ function validateInterpretation(raw: string): string | null {
   const text = raw.trim();
   if (!text || text.length > 5000) return null;
 
-  const lines = text.split(/\\r?\\n/).map((line) =>
-    line.trim().replace(/^#+\\s*/, "").replace(/^\\*+|\\*+$/g, "").trim()
+  const lines = text.split(/\r?\n/).map((line) =>
+    line.trim().replace(/^#+\s*/, "").replace(/^\*+|\*+$/g, "").trim()
   );
   const headings = [
-    /^(?:[۱1][).．-]\\s*)?پیوند با غزل[:：]?$/,
-    /^(?:[۲2][).．-]\\s*)?خوانش متناسب با نیت[:：]?$/,
-    /^(?:[۳3][).．-]\\s*)?نکتهٔ تأملی[:：]?$/,
+    /^(?:[۱1][).．-]\s*)?پیوند با غزل[:：]?$/,
+    /^(?:[۲2][).．-]\s*)?خوانش متناسب با نیت[:：]?$/,
+    /^(?:[۳3][).．-]\s*)?نکتهٔ تأملی[:：]?$/,
   ];
 
   const positions = headings.map((pattern) => lines.findIndex((line) => pattern.test(line)));
