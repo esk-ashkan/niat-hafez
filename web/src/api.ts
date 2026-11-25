@@ -129,3 +129,17 @@ export async function getPaymentStatus(invoice_id: number) {
   if (!res.ok) throw new Error("status_failed");
   return res.json() as Promise<{ status: string }>;
 }
+
+export async function reconcilePayment(invoice_id: number) {
+  const res = await withTimeout(
+    fetch(`${API}/api/pay/reconcile`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...telegramHeaders() },
+      body: JSON.stringify({ invoice_id }),
+    }),
+    20000
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "reconcile_failed");
+  return data as { status: string; granted?: number; already_paid?: boolean };
+}
