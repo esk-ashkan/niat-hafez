@@ -337,22 +337,7 @@ async function ensureProfile(
     last_name?: string | null;
   }
 ) {
-  const existing = await getProfile(env, user.tgid);
   const now = new Date().toISOString();
-
-  if (existing) {
-    await sb(env)
-      .from("profile")
-      .update({
-        username: user.username ?? existing.username,
-        first_name: user.first_name ?? existing.first_name,
-        last_name: user.last_name ?? existing.last_name,
-        last_visit: now,
-      })
-      .eq("tgid", user.tgid);
-    return (await getProfile(env, user.tgid))!;
-  }
-
   const row = {
     tgid: user.tgid,
     username: user.username || null,
@@ -365,9 +350,28 @@ async function ensureProfile(
     last_visit: now,
   };
 
-  const { error } = await sb(env).from("profile").insert(row);
-  if (error) throw error;
-  return (await getProfile(env, user.tgid))!;
+  // Insert only when the profile does not exist. On a concurrent first request,
+  // the primary-key conflict is ignored without overwriting existing credits.
+  const { error: insertError } = await sb(env)
+    .from("profile")
+    .upsert(row, { onConflict: "tgid", ignoreDuplicates: true });
+  if (insertError) throw insertError;
+
+  // Refresh Telegram profile metadata after ensuring the row exists.
+  const { error: updateError } = await sb(env)
+    .from("profile")
+    .update({
+      username: user.username ?? undefined,
+      first_name: user.first_name ?? undefined,
+      last_name: user.last_name ?? undefined,
+      last_visit: now,
+    })
+    .eq("tgid", user.tgid);
+  if (updateError) throw updateError;
+
+  const profile = await getProfile(env, user.tgid);
+  if (!profile) throw new Error("profile_creation_failed");
+  return profile;
 }
 
 async function isRateLimited(env: Env, key: string, limit: number, windowSeconds: number) {
