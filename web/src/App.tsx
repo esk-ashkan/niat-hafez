@@ -5,6 +5,7 @@ import {
   fetchFal,
   getPackages,
   getPaymentStatus,
+  reconcilePayment,
   getTelegramUser,
   initTelegramUi,
   type Faal,
@@ -143,7 +144,21 @@ export default function App() {
         }
       }
       if (!paid) {
-        setError("وضعیت پرداخت هنوز نهایی نشده است. پس از تأیید پرداخت، اعتبار شما به‌روزرسانی می‌شود؛ می‌توانید کمی بعد دوباره بررسی کنید.");
+        try {
+          const reconciled = await reconcilePayment(invoice_id);
+          if (reconciled.status === "PAID") {
+            const prof = await ensureProfile();
+            setProfile(prof);
+            setError("");
+            setView("home");
+            paid = true;
+          }
+        } catch {
+          // The provider or webhook may still be processing; keep the invoice pending.
+        }
+      }
+      if (!paid) {
+        setError("وضعیت پرداخت هنوز نهایی نشده است. فاکتور شما محفوظ است؛ کمی بعد دوباره وارد برنامه شوید تا وضعیت آن بررسی شود.");
       }
     } catch (e) {
       const message = e instanceof Error && e.message === "telegram_auth_failed"
