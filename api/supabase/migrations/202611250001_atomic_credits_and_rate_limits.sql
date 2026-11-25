@@ -1,6 +1,8 @@
 -- Atomic credit consumption and per-user API rate limiting.
 -- Apply this migration in the Supabase SQL editor before deploying the Worker.
 
+drop function if exists public.consume_hafez_credit(bigint);
+
 create or replace function public.consume_hafez_credit(p_tgid bigint)
 returns public.profile
 language plpgsql
