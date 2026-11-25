@@ -370,6 +370,16 @@ async function ensureProfile(
   return (await getProfile(env, user.tgid))!;
 }
 
+async function isRateLimited(env: Env, key: string, limit: number, windowSeconds: number) {
+  const { data, error } = await sb(env).rpc("consume_api_rate_limit", {
+    p_key: key,
+    p_limit: limit,
+    p_window_seconds: windowSeconds,
+  });
+  if (error) throw new Error("rate_limit_check_failed: " + error.message);
+  return data !== true;
+}
+
 async function consumeCredit(env: Env, tgid: number) {
   const { data, error } = await sb(env).rpc("consume_hafez_credit", {
     p_tgid: tgid,
@@ -528,6 +538,9 @@ export default {
         const user = await authenticateTelegram(request, env);
         if (!user) return json({ error: "unauthorized" }, 401);
         const tgid = user.id;
+        if (await isRateLimited(env, `fal:${tgid}`, 12, 60)) {
+          return json({ error: "rate_limited" }, 429);
+        }
 
         const requestedIntention = url.searchParams.get("intention") || "general";
         const intention = Object.prototype.hasOwnProperty.call(INTENTIONS, requestedIntention)
@@ -575,6 +588,9 @@ export default {
         const pkg = PACKAGES[package_id];
         if (!pkg) return json({ error: "invalid_request" }, 400);
         const tgid = user.id;
+        if (await isRateLimited(env, `pay-create:${tgid}`, 5, 600)) {
+          return json({ error: "rate_limited" }, 429);
+        }
 
         await ensureProfile(env, user);
 
@@ -681,6 +697,9 @@ export default {
       if (path === "/api/pay/status") {
         const user = await authenticateTelegram(request, env);
         if (!user) return json({ error: "unauthorized" }, 401);
+        if (await isRateLimited(env, `pay-status:${user.id}`, 30, 60)) {
+          return json({ error: "rate_limited" }, 429);
+        }
         const invoiceId = Number(url.searchParams.get("invoice_id") || 0);
         if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) return json({ error: "invoice_id_required" }, 400);
         const { data: pay, error } = await sb(env)
@@ -698,6 +717,9 @@ export default {
         const user = await authenticateTelegram(request, env);
         if (!user) return json({ error: "unauthorized" }, 401);
         const body = (await request.json()) as { invoice_id?: number };
+        if (await isRateLimited(env, `pay-reconcile:${user.id}`, 5, 60)) {
+          return json({ error: "rate_limited" }, 429);
+        }
         const invoiceId = Number(body.invoice_id || 0);
         if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) return json({ error: "invoice_id_required" }, 400);
 
