@@ -386,16 +386,24 @@ async function consumeCredit(env: Env, tgid: number) {
   });
   if (error) throw new Error("credit_consumption_failed: " + error.message);
 
-  const profile = data as ProfileRow | null;
-  if (!profile) {
-    const existing = await getProfile(env, tgid);
+  const result = data as {
+    ok?: boolean;
+    reason?: string;
+    profile?: ProfileRow | null;
+  } | null;
+
+  if (!result?.ok || !result.profile) {
+    const existing = result?.profile ?? await getProfile(env, tgid);
     return {
       ok: false as const,
-      error: existing ? "no_credit" as const : "no_profile" as const,
+      error: result?.reason === "no_profile" || !existing
+        ? "no_profile" as const
+        : "no_credit" as const,
       profile: existing,
     };
   }
-  return { ok: true as const, profile };
+
+  return { ok: true as const, profile: result.profile };
 }
 
 async function tgApi(env: Env, method: string, body: unknown) {
