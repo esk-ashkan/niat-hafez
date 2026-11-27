@@ -139,3 +139,19 @@
 .default-interpretation { margin-top:16px; padding-top:12px; border-top:1px solid var(--gold-soft); color:var(--muted); font-size:13px; }
 .default-interpretation summary { cursor:pointer; color:var(--burgundy); }
 .default-interpretation p { margin-top:10px; line-height:2; }
+
+
+/* Independent service selection and credit balances */
+.mode-switch { display:flex; width:min(100%,430px); margin:18px auto 8px; padding:4px; gap:4px; border:1px solid var(--line); border-radius:999px; background:var(--surface); }
+.mode-switch button { flex:1; min-height:42px; padding:8px 12px; border:0; border-radius:999px; color:var(--muted); background:transparent; font:inherit; font-size:13px; }
+.mode-switch button.selected { color:#fff5e8; background:var(--burgundy); }
+.credit-card-dual { align-items:stretch; }
+.credit-card-dual .credit-info { min-width:0; }
+.credit-card-dual .credit-info + .credit-info { padding-right:20px; border-right:1px solid var(--line); }
+.credit-card-dual .credit-action { margin-top:12px; }
+.ai-unlock-button { min-height:50px; margin-top:22px; font-size:14px; }
+@media (max-width:640px) {
+  .credit-card-dual { align-items:stretch; }
+  .credit-card-dual .credit-info { flex-basis:100%; }
+  .credit-card-dual .credit-info + .credit-info { padding:16px 0 0; border-right:0; border-top:1px solid var(--line); }
+}
