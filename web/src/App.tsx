@@ -3,6 +3,8 @@ import {
   createPayment,
   ensureProfile,
   fetchFal,
+  fetchAiFal,
+  interpretFaal,
   getPackages,
   getPaymentStatus,
   reconcilePayment,
@@ -15,6 +17,7 @@ import {
 import "./App.css";
 
 type View = "home" | "pay";
+type Mode = "traditional" | "ai";
 type Theme = "light" | "dark";
 type IconName = "moon" | "sun" | "sparkle" | "book" | "cart" | "home" | "wallet" | "arrow" | "gift" | "help" | "refresh";
 
@@ -38,6 +41,7 @@ function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
 
 export default function App() {
   const [view, setView] = useState<View>("home");
+  const [mode, setMode] = useState<Mode>("traditional");
   const [theme, setTheme] = useState<Theme>(() => {
     try { return (localStorage.getItem("niat-theme") as Theme) || "light"; } catch { return "light"; }
   });
@@ -98,7 +102,9 @@ export default function App() {
     try { localStorage.setItem("niat-theme", theme); } catch { /* storage is optional */ }
   }, [theme]);
 
-  const total = (profile?.free_remaining || 0) + (profile?.remained_hafez || 0);
+  const traditionalTotal = (profile?.free_remaining || 0) + (profile?.remained_hafez || 0);
+  const aiTotal = (profile?.ai_free_remaining || 0) + (profile?.remained_ai || 0);
+  const visiblePackages = packages.filter((p) => p.service === mode);
 
   async function onGetFal() {
     if (!tgid) return;
@@ -106,17 +112,38 @@ export default function App() {
     setError("");
     setFaal(null);
     try {
-      const res = await fetchFal(intention);
+      const res = mode === "ai" ? await fetchAiFal(intention) : await fetchFal();
       setFaal(res.faal);
       setProfile(res.profile);
     } catch (e) {
       const err = e as Error & { profile?: Profile };
-      if (err.message === "no_credit") {
-        setError("اعتبار شما به پایان رسیده است. برای ادامه، یک بسته فال تهیه کنید.");
+      if (err.message === "no_credit" || err.message === "no_ai_credit") {
+        setError(mode === "ai" ? "اعتبار تعبیر شخصی هوشمند شما به پایان رسیده است." : "اعتبار فال سنتی شما به پایان رسیده است.");
         if (err.profile) setProfile(err.profile);
         setView("pay");
       } else {
         setError("دریافت فال با مشکل روبه‌رو شد. لطفاً دوباره تلاش کنید.");
+      }
+    } finally { setLoading(false); }
+  }
+
+  async function onAiInterpret() {
+    if (!faal || !tgid) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await interpretFaal(faal.id, intention);
+      setFaal(res.faal);
+      setProfile(res.profile);
+    } catch (e) {
+      const err = e as Error & { profile?: Profile };
+      if (err.profile) setProfile(err.profile);
+      if (err.message === "no_ai_credit") {
+        setError("اعتبار تعبیر شخصی هوشمند شما به پایان رسیده است.");
+        setMode("ai");
+        setView("pay");
+      } else {
+        setError("دریافت تعبیر شخصی با مشکل روبه‌رو شد. لطفاً دوباره تلاش کنید.");
       }
     } finally { setLoading(false); }
   }
@@ -203,8 +230,12 @@ export default function App() {
         {!faal || view === "pay" ? (
           <div className="intention-content">
             <div className="section-kicker"><span /> به نام عشق و روشنایی <span /></div>
-            <h2>{view === "pay" ? "همراه غزل‌های حافظ بمان" : "نیت کن..."}</h2>
-            <p className="panel-copy">{view === "pay" ? "بسته‌ای انتخاب کن و سفر خود را با شعر ادامه بده." : "لحظه‌ای آرام بگیر و به نیت قلبت فکر کن."}</p>
+            {view === "home" && <div className="mode-switch" role="group" aria-label="نوع فال">
+              <button type="button" className={mode === "traditional" ? "selected" : ""} onClick={() => { setMode("traditional"); setError(""); }}>فال سنتی</button>
+              <button type="button" className={mode === "ai" ? "selected" : ""} onClick={() => { setMode("ai"); setError(""); }}>تعبیر شخصی هوشمند</button>
+            </div>}
+            <h2>{view === "pay" ? "بسته اعتبار انتخاب کن" : mode === "ai" ? "نیتت را با هوش مصنوعی دنبال کن..." : "نیت کن..."}</h2>
+            <p className="panel-copy">{view === "pay" ? "بسته‌ای متناسب با سرویس انتخاب‌شده تهیه کن." : mode === "ai" ? "غزل و نیتت را برای یک خوانش شخصی‌تر بررسی می‌کنیم." : "لحظه‌ای آرام بگیر و به نیت قلبت فکر کن."}</p>
             <div className="crystal-scene" aria-hidden="true">
               <div className="orbit orbit-a" /><div className="orbit orbit-b" />
               <div className="crystal"><Icon name="sparkle" size={42} /></div>
@@ -213,7 +244,7 @@ export default function App() {
             </div>
             {view === "home" ? (
               <>
-              <label className="intention-select-label" htmlFor="fortune-intention">نیت شما درباره چیست؟</label>
+              {mode === "ai" && <><label className="intention-select-label" htmlFor="fortune-intention">نیت شما درباره چیست؟</label>
               <select id="fortune-intention" className="intention-select" value={intention} onChange={(e) => setIntention(e.target.value)}>
                 <option value="general">عمومی</option>
                 <option value="love">عشقی و عاطفی</option>
@@ -223,10 +254,10 @@ export default function App() {
                 <option value="family">خانوادگی</option>
                 <option value="migration">مهاجرت و سفر</option>
                 <option value="decision">تصمیم‌گیری</option>
-              </select>
+              </select></>}
               <button className="primary-button" type="button" disabled={loading || !tgid} onClick={onGetFal}>
                 {loading ? <span className="button-spinner" /> : <Icon name="sparkle" size={21} />}
-                <span>{loading ? "در حال گشودن دیوان..." : "نیت کردم؛ فال بگیر"}</span><Icon name="arrow" size={19} />
+                <span>{loading ? "در حال آماده‌سازی..." : mode === "ai" ? "تعبیر شخصی بگیر" : "نیت کردم؛ فال سنتی بگیر"}</span><Icon name="arrow" size={19} />
               </button>
               </>
             ) : (
@@ -240,22 +271,22 @@ export default function App() {
             <h2>{faal.title}</h2>
             <pre className="poem">{faal.poem}</pre>
             {faal.interpretation && <div className="interpretation"><h3><Icon name="book" size={18} /> تعبیر فال</h3><p>{faal.interpretation}</p>{faal.defaultInterpretation && faal.defaultInterpretation !== faal.interpretation && <details className="default-interpretation"><summary>مشاهده تعبیر اولیه</summary><p>{faal.defaultInterpretation}</p></details>}</div>}
+            {!faal.aiEnhanced && <button className="primary-button ai-unlock-button" type="button" disabled={loading} onClick={onAiInterpret}>{loading ? <span className="button-spinner" /> : <Icon name="sparkle" size={18} />} دریافت تعبیر شخصی هوشمند (۱ اعتبار AI)</button>}
             <button className="secondary-button" type="button" disabled={loading} onClick={onGetFal}>{loading ? <span className="button-spinner" /> : <Icon name="refresh" size={18} />} فال دیگری بگیر</button>
           </article>
         )}
       </section>
 
-      <section className="credit-card">
-        <div className="credit-icon"><Icon name="wallet" size={28} /></div>
-        <div className="credit-info"><span>اعتبار باقی‌مانده شما</span><strong>{profile ? total.toLocaleString("fa-IR") : "—"} <small>فال</small></strong><div className="credit-breakdown">رایگان: {(profile?.free_remaining || 0).toLocaleString("fa-IR")} <span>·</span> خریداری‌شده: {(profile?.remained_hafez || 0).toLocaleString("fa-IR")}</div></div>
-        <button className="credit-action" type="button" onClick={() => setView("pay")}><Icon name="gift" size={18} /> افزایش اعتبار</button>
+      <section className="credit-card credit-card-dual">
+        <div className="credit-info"><span>اعتبار فال سنتی</span><strong>{profile ? traditionalTotal.toLocaleString("fa-IR") : "—"} <small>فال</small></strong><div className="credit-breakdown">رایگان: {(profile?.free_remaining || 0).toLocaleString("fa-IR")} <span>·</span> خریداری‌شده: {(profile?.remained_hafez || 0).toLocaleString("fa-IR")}</div><button className="credit-action" type="button" onClick={() => { setMode("traditional"); setView("pay"); }}><Icon name="gift" size={18} /> خرید اعتبار سنتی</button></div>
+        <div className="credit-info"><span>اعتبار تعبیر شخصی هوشمند</span><strong>{profile ? aiTotal.toLocaleString("fa-IR") : "—"} <small>اعتبار</small></strong><div className="credit-breakdown">رایگان: {(profile?.ai_free_remaining || 0).toLocaleString("fa-IR")} <span>·</span> خریداری‌شده: {(profile?.remained_ai || 0).toLocaleString("fa-IR")}</div><button className="credit-action" type="button" onClick={() => { setMode("ai"); setView("pay"); }}><Icon name="gift" size={18} /> خرید اعتبار AI</button></div>
       </section>
 
       {view === "pay" && (
         <section className="packages-section">
-          <div className="section-title"><div><span className="mini-kicker">ادامه همراهی</span><h2>بسته‌های فال</h2></div><span className="title-sparkle">✧</span></div>
+          <div className="section-title"><div><span className="mini-kicker">ادامه همراهی</span><h2>بسته‌های {mode === "ai" ? "تعبیر شخصی هوشمند" : "فال سنتی"}</h2></div><span className="title-sparkle">✧</span></div>
           <div className="packages-grid">
-            {packages.map((p, i) => <article className={`package-card ${i === 1 ? "package-featured" : ""}`} key={p.id}>
+            {visiblePackages.map((p, i) => <article className={`package-card ${i === 1 ? "package-featured" : ""}`} key={p.id}>
               {i === 1 && <span className="popular-tag">پیشنهاد محبوب</span>}
               <span className="package-count">{p.grant.toLocaleString("fa-IR")} <small>فال</small></span>
               <h3>{p.title}</h3>
