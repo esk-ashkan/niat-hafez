@@ -61,7 +61,6 @@ const PACKAGES: Record<
     amount_rial: 1_749_000,
     grant: 10,
     service: "traditional",
-    service: "traditional",
   },
   ai_1: { id: "ai_1", title: "۱ تعبیر شخصی هوشمند", amount_rial: 490_000, grant: 1, service: "ai" },
   ai_5: { id: "ai_5", title: "۵ تعبیر شخصی هوشمند", amount_rial: 1_990_000, grant: 5, service: "ai" },
