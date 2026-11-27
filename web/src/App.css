@@ -155,3 +155,6 @@
   .credit-card-dual .credit-info { flex-basis:100%; }
   .credit-card-dual .credit-info + .credit-info { padding:16px 0 0; border-right:0; border-top:1px solid var(--line); }
 }
+
+.ai-unlock-panel { max-width:430px; margin:24px auto 0; }
+.ai-unlock-panel .intention-select { margin-bottom:12px; }
