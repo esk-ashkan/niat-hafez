@@ -271,7 +271,20 @@ export default function App() {
             <h2>{faal.title}</h2>
             <pre className="poem">{faal.poem}</pre>
             {faal.interpretation && <div className="interpretation"><h3><Icon name="book" size={18} /> تعبیر فال</h3><p>{faal.interpretation}</p>{faal.defaultInterpretation && faal.defaultInterpretation !== faal.interpretation && <details className="default-interpretation"><summary>مشاهده تعبیر اولیه</summary><p>{faal.defaultInterpretation}</p></details>}</div>}
-            {!faal.aiEnhanced && <button className="primary-button ai-unlock-button" type="button" disabled={loading} onClick={onAiInterpret}>{loading ? <span className="button-spinner" /> : <Icon name="sparkle" size={18} />} دریافت تعبیر شخصی هوشمند (۱ اعتبار AI)</button>}
+            {!faal.aiEnhanced && <div className="ai-unlock-panel">
+              <label className="intention-select-label" htmlFor="ai-result-intention">برای تعبیر شخصی، نیت شما درباره چیست؟</label>
+              <select id="ai-result-intention" className="intention-select" value={intention} onChange={(e) => setIntention(e.target.value)}>
+                <option value="general">عمومی</option>
+                <option value="love">عشقی و عاطفی</option>
+                <option value="career">کاری و شغلی</option>
+                <option value="financial">مالی و اقتصادی</option>
+                <option value="education">تحصیلی</option>
+                <option value="family">خانوادگی</option>
+                <option value="migration">مهاجرت و سفر</option>
+                <option value="decision">تصمیم‌گیری</option>
+              </select>
+              <button className="primary-button ai-unlock-button" type="button" disabled={loading} onClick={onAiInterpret}>{loading ? <span className="button-spinner" /> : <Icon name="sparkle" size={18} />} دریافت تعبیر شخصی هوشمند (۱ اعتبار AI)</button>
+            </div>}
             <button className="secondary-button" type="button" disabled={loading} onClick={onGetFal}>{loading ? <span className="button-spinner" /> : <Icon name="refresh" size={18} />} فال دیگری بگیر</button>
           </article>
         )}
