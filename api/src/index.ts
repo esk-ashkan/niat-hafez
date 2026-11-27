@@ -706,7 +706,6 @@ export default {
         if (!spent.ok) return json({ error: spent.error || "no_ai_credit", profile: spent.profile ? publicProfile(spent.profile) : null }, 402);
         return json({ faal: { ...original, interpretation: enhanced.text, defaultInterpretation: original.interpretation, aiEnhanced: true, interpretationProvider: enhanced.provider, intention }, profile: publicProfile(spent.profile!) });
       }
-      }
 
       if (path === "/payments/packages") {
         return json({ packages: Object.values(PACKAGES) });
