@@ -38,8 +38,11 @@ export type Profile = {
   first_name: string | null;
   free_remaining: number;
   remained_hafez: number;
+  ai_free_remaining: number;
+  remained_ai: number;
   referral_code: string | null;
   total_credit?: number;
+  total_ai_credit?: number;
 };
 
 export type Package = {
@@ -47,6 +50,7 @@ export type Package = {
   title: string;
   amount_rial: number;
   grant: number;
+  service: "traditional" | "ai";
 };
 
 export async function ensureProfile(): Promise<Profile> {
@@ -71,6 +75,37 @@ export async function fetchFal(intention = "general") {
   }
   if (res.status === 401) throw new Error("telegram_auth_failed");
   if (!res.ok) throw new Error("fal_failed");
+  return data as { faal: Faal; profile: Profile };
+}
+
+export async function fetchAiFal(intention = "general") {
+  const params = new URLSearchParams({ intention });
+  const res = await withTimeout(fetch(`${API}/api/ai/fal?${params.toString()}`, {
+    headers: telegramHeaders(),
+  }), 50000);
+  const data = await res.json();
+  if (res.status === 402 || data.error === "no_ai_credit") {
+    const err = new Error("no_ai_credit") as Error & { profile?: Profile };
+    err.profile = data.profile;
+    throw err;
+  }
+  if (!res.ok) throw new Error(data.error || "ai_fal_failed");
+  return data as { faal: Faal; profile: Profile };
+}
+
+export async function interpretFaal(faal_id: number, intention = "general") {
+  const res = await withTimeout(fetch(`${API}/api/ai/interpret`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...telegramHeaders() },
+    body: JSON.stringify({ faal_id, intention }),
+  }), 50000);
+  const data = await res.json();
+  if (res.status === 402 || data.error === "no_ai_credit") {
+    const err = new Error("no_ai_credit") as Error & { profile?: Profile };
+    err.profile = data.profile;
+    throw err;
+  }
+  if (!res.ok) throw new Error(data.error || "ai_interpretation_failed");
   return data as { faal: Faal; profile: Profile };
 }
 
