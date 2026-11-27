@@ -18,7 +18,7 @@ CREATE OR REPLACE FUNCTION public.consume_ai_credit(p_tgid bigint)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path = ''
 AS $function$
 DECLARE
   p record;
@@ -60,7 +60,7 @@ CREATE OR REPLACE FUNCTION public.process_paid_ai_payment(p_invoice_id bigint)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path = ''
 AS $function$
 DECLARE
   v_payment record;

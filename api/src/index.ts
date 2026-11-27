@@ -227,6 +227,7 @@ function validateInterpretation(raw: string): string | null {
   return text;
 }
 
+
 async function requestInterpretation(
   provider: "groq" | "apinex",
   apiKey: string,
@@ -249,22 +250,43 @@ async function requestInterpretation(
         model,
         temperature: 0.55,
         max_tokens: 700,
-                messages: [
+        messages: [
           {
             role: "system",
             content: [
-              "تو یک مفسر ادبی غزل‌های حافظ هستی، نه پیشگو و نه مشاور تخصصی.",
-              "فقط به زبان فارسی روان، محترمانه و روشن بنویس.",
-              "تعبیر اولیه را مبنا بگیر؛ آن را حذف یا نقض نکن، فقط با توجه به نیت کاربر روشن‌تر و کاربردی‌ترش کن.",
-              "به واژه‌ها، تصاویر و فضای غزل وفادار بمان؛ معنای شعر را عوض نکن و از غزل نتیجهٔ اجباری نساز.",
-              "لحن: آرام، امیدوار اما واقع‌بین؛ بدون اغراق، بدون ترس‌افکنی.",
-              "ممنوع: پیش‌بینی قطعی زمانی («حتماً تا فلان روز»)، وعدهٔ تضمینی پول/ازدواج/شفا، دستورالعمل پزشکی/حقوقی/مالی، طالع‌بینی خرافی سنگین، یا نصیحت تهدیدآمیز.",
-              "ساختار پاسخ دقیقاً سه بخش کوتاه با همین عنوان‌ها:",
+              "تو نویسنده‌ای فارسی‌زبان هستی که برای فال حافظ، تفسیری طبیعی، دقیق و متناسب با نیت مخاطب می‌نویسی.",
+              "هدف این است که مخاطب احساس کند شعر را از زاویه دغدغه خودش دیده‌ای؛ نه اینکه صرفاً توضیحی طولانی درباره شعر خوانده باشد.",
+              "",
+              "قواعد اصلی:",
+              "فقط به زبان فارسی روان، طبیعی و امروزی بنویس.",
+              "به ارتباط واقعی میان شعر و نیت کاربر وفادار بمان. اگر ارتباط مستقیم نیست، از مضمون‌های مشترک و معتبر مانند امید، انتظار، دشواری یا تغییر استفاده کن؛ اما هرگز معنایی را به شعر نسبت نده که در آن وجود ندارد.",
+              "کل پاسخ حدود ۸۰ تا ۱۰۰ کلمه باشد.",
+              "لحن صمیمی، سنجیده و انسانی باشد؛ نه رسمی، ادبیِ تصنعی یا شبیه متن تولیدشده توسط هوش مصنوعی.",
+              "مستقیماً به نیت مخاطب بپرداز و ارتباط واقعی آن را با مفهوم غزل توضیح بده.",
+              "نیت کاربر فقط زاویه نگاه به شعر را مشخص می‌کند و مجوزی برای وارد کردن مفاهیم نامرتبط نیست. مثلاً در نیت مالی، مفاهیمی مانند سرمایه‌گذاری، سود، جریان نقدی یا پیش‌بینی بازار را وارد نکن، مگر اینکه شعر یا تعبیر اولیه واقعاً به آن‌ها اشاره داشته باشد. همین اصل درباره سایر نیت‌ها نیز صدق می‌کند.",
+              "فقط از بخش‌هایی از مفهوم شعر استفاده کن که واقعاً به نیت مخاطب مربوط‌اند.",
+              "لازم نیست تمام تصاویر و نمادهای شعر را تفسیر کنی.",
+              "تعبیر اولیه را مبنا قرار بده و معنای اصلی آن را حفظ کن؛ اما آن را صرفاً با کلمات دیگر تکرار نکن.",
+              "پیش از نوشتن، ابتدا مضمون اصلی غزل و پیام تعبیر اولیه را درک کن. سپس فقط آن بخش‌هایی را که با نیت کاربر ارتباط معنادار دارند، برای ارائه یک برداشت شخصی انتخاب کن. نیت کاربر نباید باعث تغییر معنای شعر یا جایگزین شدن آن با نصیحت‌های عمومی شود.",
+              "از تکرار یک توصیه یا بیان یک مفهوم با عبارت‌های متفاوت خودداری کن.",
+              "از امیدواری بی‌دلیل، پیش‌بینی قطعی، نصیحت‌های کلیشه‌ای و تشبیه‌های تحمیلی پرهیز کن.",
+              "چیزی درباره زندگی مخاطب که از نیت او نمی‌دانی، فرض نکن.",
+              "فال را بهانه‌ای برای تأمل بدان، نه ابزاری برای پیشگویی قطعی.",
+              "از وعده تضمینی پول، ازدواج یا شفا و دستورالعمل پزشکی، حقوقی یا مالی خودداری کن.",
+              "پاسخ باید کامل باشد و جمله پایانی نباید ناتمام بماند.",
+              "",
+              "ساختار پاسخ دقیقاً سه بخش با همین عنوان‌ها و به همین ترتیب باشد:",
               "۱) پیوند با غزل",
+              "در یک یا دو جمله، مفهوم اصلی غزل و ارتباط واقعی آن با نیت مخاطب را بیان کن.",
+              "",
               "۲) خوانش متناسب با نیت",
+              "در دو یا سه جمله، برداشت شخصی و کاربردی خود را برای نیت مطرح‌شده ارائه بده. این بخش مهم‌ترین قسمت پاسخ است.",
+              "",
               "۳) نکتهٔ تأملی",
-              "هر بخش حداکثر ۲–۳ جمله.",
-            ].join(" "),
+              "در یک جمله کوتاه، پرسشی معنادار یا نکته‌ای برای فکر کردن مطرح کن.",
+              "",
+              "فقط همین سه بخش را بنویس. هیچ مقدمه یا توضیح اضافه‌ای نده."
+            ].join("\n"),
           },
           {
             role: "user",
@@ -280,8 +302,9 @@ async function requestInterpretation(
               "تعبیر اولیه (منبع اصلی؛ نباید تحریف شود):",
               faal.interpretation || "—",
               "",
-              "وظیفه: تعبیری بنویس که همان روح تعبیر اولیه را حفظ کند، اما تأکید و مثال‌هایش با نیت کاربر هم‌راستا باشد.",
-              "اگر نیت با غزل فاصله دارد، با احتیاط و بدون تحمیل معنا، فقط زاویهٔ نگاه را نرم تنظیم کن.",
+              "وظیفه: تعبیری بنویس که روح و معنای تعبیر اولیه را حفظ کند، اما برداشت آن واقعاً با نیت کاربر ارتباط داشته باشد.",
+              "به‌جای بازگویی تعبیر اولیه، از میان مفاهیم آن، مرتبط‌ترین نکته را برای این نیت انتخاب کن.",
+              "اگر نیت با غزل فاصله دارد، ارتباطی ساختگی ایجاد نکن؛ صادقانه و با احتیاط یک زاویه نگاه مرتبط ارائه بده."
             ].join("\n"),
           },
         ],
@@ -291,21 +314,69 @@ async function requestInterpretation(
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`${provider.toUpperCase()}_HTTP_ERROR:`, response.status, errorBody.slice(0, 1200));
+      console.error(
+        `${provider.toUpperCase()}_HTTP_ERROR:`,
+        response.status,
+        errorBody.slice(0, 1200)
+      );
       return null;
     }
 
     const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>;
+      choices?: Array<{
+        message?: {
+          content?: string | Array<{ type?: string; text?: string }>;
+        };
+        finish_reason?: string;
+      }>;
+      usage?: {
+        completion_tokens?: number;
+        prompt_tokens?: number;
+        total_tokens?: number;
+      };
     };
-    const content = data.choices?.[0]?.message?.content;
+
+    const choice = data.choices?.[0];
+    const content = choice?.message?.content;
+
     const text = typeof content === "string"
       ? content.trim()
       : Array.isArray(content)
         ? content.map((part) => part.text || "").join("").trim()
         : "";
+
+    console.log(
+      "INTERPRETATION_RESPONSE_META",
+      JSON.stringify({
+        provider,
+        finishReason: choice?.finish_reason,
+        completionTokens: data.usage?.completion_tokens,
+        promptTokens: data.usage?.prompt_tokens,
+        responseLength: text.length,
+      })
+    );
+
     const validated = validateInterpretation(text);
-    if (!validated && text) console.warn(`${provider.toUpperCase()}_INVALID_INTERPRETATION_FORMAT`);
+
+    if (!validated && text) {
+      const lines = text.split(/\r?\n/).map((line) =>
+        line.trim().replace(/^#+\s*/, "").replace(/^\*+|\*+$/g, "").trim()
+      );
+
+      console.warn(
+        `${provider.toUpperCase()}_INVALID_INTERPRETATION_FORMAT`,
+        JSON.stringify({
+          responseLength: text.length,
+          headingsFound: [
+            lines.some((line) => /پیوند\s*با\s*غزل/.test(line)),
+            lines.some((line) => /خوانش\s*متناسب\s*با\s*نیت/.test(line)),
+            lines.some((line) => /نکته.*تأملی/.test(line)),
+          ],
+          lineCount: lines.length,
+        })
+      );
+    }
+
     return validated;
   } catch (error) {
     console.error(
@@ -317,6 +388,7 @@ async function requestInterpretation(
     clearTimeout(timeout);
   }
 }
+
 
 async function enhanceInterpretation(env: Env, faal: Faal, intention: string) {
   if (env.GROQ_API_KEY) {
@@ -913,8 +985,20 @@ export default {
 
       return json({ error: "not_found" }, 404);
     } catch (e: unknown) {
-      console.error("API_REQUEST_FAILED", e instanceof Error ? e.message : String(e));
-      return json({ error: "server_error" }, 500);
-    }
+        const errorInfo =
+          e && typeof e === "object"
+            ? {
+                name: "name" in e ? e.name : undefined,
+                message: "message" in e ? e.message : undefined,
+                code: "code" in e ? e.code : undefined,
+                details: "details" in e ? e.details : undefined,
+                hint: "hint" in e ? e.hint : undefined,
+                status: "status" in e ? e.status : undefined,
+              }
+            : { message: String(e) };
+
+        console.error("API_REQUEST_FAILED", JSON.stringify(errorInfo));
+        return json({ error: "server_error" }, 500);
+      }
   },
 };
