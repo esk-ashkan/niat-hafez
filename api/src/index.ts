@@ -29,6 +29,8 @@ type ProfileRow = {
   last_name: string | null;
   free_remaining: number;
   remained_hafez: number;
+  ai_free_remaining: number;
+  remained_ai: number;
   referral_code: string | null;
   referred_by: number | null;
   created_at?: string;
@@ -37,26 +39,33 @@ type ProfileRow = {
 
 const PACKAGES: Record<
   string,
-  { id: string; title: string; amount_rial: number; grant: number }
+  { id: string; title: string; amount_rial: number; grant: number; service: "traditional" | "ai" }
 > = {
   hafez_1: {
     id: "hafez_1",
     title: "۱ فال حافظ",
-    amount_rial: 490_000,
+    amount_rial: 249_000,
     grant: 1,
+    service: "traditional",
   },
   hafez_5: {
     id: "hafez_5",
     title: "۵ فال حافظ",
-    amount_rial: 2_000_000,
+    amount_rial: 990_000,
     grant: 5,
+    service: "traditional",
   },
   hafez_10: {
     id: "hafez_10",
     title: "۱۰ فال حافظ",
-    amount_rial: 3_500_000,
+    amount_rial: 1_749_000,
     grant: 10,
+    service: "traditional",
+    service: "traditional",
   },
+  ai_1: { id: "ai_1", title: "۱ تعبیر شخصی هوشمند", amount_rial: 490_000, grant: 1, service: "ai" },
+  ai_5: { id: "ai_5", title: "۵ تعبیر شخصی هوشمند", amount_rial: 1_990_000, grant: 5, service: "ai" },
+  ai_10: { id: "ai_10", title: "۱۰ تعبیر شخصی هوشمند", amount_rial: 3_499_000, grant: 10, service: "ai" },
 };
 
 const list: Faal[] =
@@ -160,9 +169,12 @@ function publicProfile(p: ProfileRow) {
     last_name: p.last_name,
     free_remaining: p.free_remaining,
     remained_hafez: p.remained_hafez,
+    ai_free_remaining: p.ai_free_remaining,
+    remained_ai: p.remained_ai,
     referral_code: p.referral_code,
     referred_by: p.referred_by,
     total_credit: (p.free_remaining || 0) + (p.remained_hafez || 0),
+    total_ai_credit: (p.ai_free_remaining || 0) + (p.remained_ai || 0),
   };
 }
 
@@ -372,8 +384,10 @@ async function ensureProfile(
     username: user.username || null,
     first_name: user.first_name || null,
     last_name: user.last_name || null,
-    free_remaining: 5,
+    free_remaining: 3,
     remained_hafez: 0,
+    ai_free_remaining: 2,
+    remained_ai: 0,
     referral_code: `H${user.tgid.toString(36).toUpperCase()}`,
     created_at: now,
     last_visit: now,
@@ -437,6 +451,23 @@ async function consumeCredit(env: Env, tgid: number) {
   }
 
   return { ok: true as const, profile: result.profile };
+}
+
+async function consumeAiCredit(env: Env, tgid: number) {
+  const { data, error } = await sb(env).rpc("consume_ai_credit", { p_tgid: tgid });
+  if (error) throw new Error("ai_credit_consumption_failed: " + error.message);
+  const result = data as { ok?: boolean; reason?: string; profile?: ProfileRow | null } | null;
+  if (!result?.ok || !result.profile) {
+    const existing = result?.profile ?? await getProfile(env, tgid);
+    return { ok: false as const, error: result?.reason === "no_profile" || !existing ? "no_profile" as const : "no_credit" as const, profile: existing };
+  }
+  return { ok: true as const, profile: result.profile };
+}
+
+async function processPaidAiPayment(env: Env, invoiceId: number) {
+  const { data, error } = await sb(env).rpc("process_paid_ai_payment", { p_invoice_id: invoiceId });
+  if (error) throw new Error(JSON.stringify(error));
+  return data as { ok: boolean; reason?: string; already_paid?: boolean; granted?: number };
 }
 
 async function tgApi(env: Env, method: string, body: unknown) {
@@ -622,49 +653,59 @@ export default {
           return json({ error: "rate_limited" }, 429);
         }
 
-        const requestedIntention = url.searchParams.get("intention") || "general";
-        const intention = Object.prototype.hasOwnProperty.call(INTENTIONS, requestedIntention)
-          ? requestedIntention
-          : "general";
-
         await ensureProfile(env, { tgid: user.id, username: user.username, first_name: user.first_name, last_name: user.last_name });
-
-        // Check current balance before expensive AI work, but deduct only after
-        // interpretation generation succeeds. The atomic RPC remains the final
-        // authority when concurrent requests compete for the last credit.
         const currentProfile = await getProfile(env, tgid);
         if (!currentProfile) return json({ error: "no_profile" }, 404);
         if ((currentProfile.free_remaining || 0) + (currentProfile.remained_hafez || 0) <= 0) {
           return json({ error: "no_credit", profile: publicProfile(currentProfile) }, 402);
         }
-
-        const originalFaal = randomFaal();
-        const enhanced = await enhanceInterpretation(env, originalFaal, intention);
-
-        // Consume only after generation completes; this prevents unexpected
-        // generation failures from charging the user without returning a result.
+        const faal = randomFaal();
         const spent = await consumeCredit(env, tgid);
-        if (!spent.ok) {
-          return json(
-            {
-              error: spent.error || "no_credit",
-              profile: spent.profile ? publicProfile(spent.profile) : null,
-            },
-            402
-          );
-        }
-        const faal = {
-          ...originalFaal,
-          interpretation: enhanced?.text || originalFaal.interpretation,
-          defaultInterpretation: originalFaal.interpretation,
-          aiEnhanced: Boolean(enhanced),
-          interpretationProvider: enhanced?.provider || "original",
-          intention,
-        };
-        return json({
-          faal,
-          profile: publicProfile(spent.profile!),
-        });
+        if (!spent.ok) return json({ error: spent.error || "no_credit", profile: spent.profile ? publicProfile(spent.profile) : null }, 402);
+        return json({ faal: { ...faal, aiEnhanced: false }, profile: publicProfile(spent.profile!) });
+      }
+
+      if (path === "/api/ai/fal") {
+        if (request.method !== "GET") return json({ error: "method_not_allowed" }, 405);
+        const user = await authenticateTelegram(request, env);
+        if (!user) return json({ error: "unauthorized" }, 401);
+        const tgid = user.id;
+        if (await isRateLimited(env, `ai-fal:${tgid}`, 8, 60)) return json({ error: "rate_limited" }, 429);
+        const requested = url.searchParams.get("intention") || "general";
+        const intention = Object.prototype.hasOwnProperty.call(INTENTIONS, requested) ? requested : "general";
+        await ensureProfile(env, { tgid, username: user.username, first_name: user.first_name, last_name: user.last_name });
+        const current = await getProfile(env, tgid);
+        if (!current) return json({ error: "no_profile" }, 404);
+        if ((current.ai_free_remaining || 0) + (current.remained_ai || 0) <= 0) return json({ error: "no_ai_credit", profile: publicProfile(current) }, 402);
+        const original = randomFaal();
+        const enhanced = await enhanceInterpretation(env, original, intention);
+        if (!enhanced) return json({ error: "ai_unavailable" }, 503);
+        const spent = await consumeAiCredit(env, tgid);
+        if (!spent.ok) return json({ error: spent.error || "no_ai_credit", profile: spent.profile ? publicProfile(spent.profile) : null }, 402);
+        return json({ faal: { ...original, interpretation: enhanced.text, defaultInterpretation: original.interpretation, aiEnhanced: true, interpretationProvider: enhanced.provider, intention }, profile: publicProfile(spent.profile!) });
+      }
+
+      if (path === "/api/ai/interpret" && request.method === "POST") {
+        const user = await authenticateTelegram(request, env);
+        if (!user) return json({ error: "unauthorized" }, 401);
+        if (await isRateLimited(env, `ai-interpret:${user.id}`, 8, 60)) return json({ error: "rate_limited" }, 429);
+        const body = await request.json() as { faal_id?: number; intention?: string };
+        const faalId = Number(body.faal_id);
+        const requested = body.intention || "general";
+        const intention = Object.prototype.hasOwnProperty.call(INTENTIONS, requested) ? requested : "general";
+        if (!Number.isSafeInteger(faalId)) return json({ error: "invalid_faal_id" }, 400);
+        await ensureProfile(env, { tgid: user.id, username: user.username, first_name: user.first_name, last_name: user.last_name });
+        const current = await getProfile(env, user.id);
+        if (!current) return json({ error: "no_profile" }, 404);
+        if ((current.ai_free_remaining || 0) + (current.remained_ai || 0) <= 0) return json({ error: "no_ai_credit", profile: publicProfile(current) }, 402);
+        const original = list.find((item) => item.id === faalId);
+        if (!original) return json({ error: "faal_not_found" }, 404);
+        const enhanced = await enhanceInterpretation(env, original, intention);
+        if (!enhanced) return json({ error: "ai_unavailable" }, 503);
+        const spent = await consumeAiCredit(env, user.id);
+        if (!spent.ok) return json({ error: spent.error || "no_ai_credit", profile: spent.profile ? publicProfile(spent.profile) : null }, 402);
+        return json({ faal: { ...original, interpretation: enhanced.text, defaultInterpretation: original.interpretation, aiEnhanced: true, interpretationProvider: enhanced.provider, intention }, profile: publicProfile(spent.profile!) });
+      }
       }
 
       if (path === "/payments/packages") {
@@ -770,7 +811,9 @@ export default {
           return json({ error: "payment_not_verified" }, 400);
         }
 
-        const result = await processPaidPayment(env, invoiceId);
+        const result = pkg.service === "ai"
+          ? await processPaidAiPayment(env, invoiceId)
+          : await processPaidPayment(env, invoiceId);
 
         if (!result.ok) {
           return json(
@@ -852,7 +895,9 @@ export default {
         const pkg = PACKAGES[pay.package_id];
         if (!pkg) return json({ error: "unknown_package" }, 400);
 
-        const result = await processPaidPayment(env, invoiceId);
+        const result = pkg.service === "ai"
+          ? await processPaidAiPayment(env, invoiceId)
+          : await processPaidPayment(env, invoiceId);
 
         if (!result.ok) {
           return json(
